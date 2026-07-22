@@ -1,0 +1,76 @@
+# ==========================
+# FastAPI
+# ==========================
+fastapi
+uvicorn[standard]
+pydantic
+python-multipart
+
+# ==========================
+# Crawl4AI
+# ==========================
+crawl4ai
+playwright
+nest-asyncio
+
+# ==========================
+# AI / Scoring
+# ==========================
+torch
+sentence-transformers
+
+# ==========================
+# HTTP
+# ==========================
+requests
+httpx
+aiohttp
+
+# ==========================
+# Parsing
+# ==========================
+beautifulsoup4
+lxml
+parsel
+cssselect
+
+# ==========================
+# PDF
+# ==========================
+pymupdf
+pdfplumber
+pypdf
+
+# ==========================
+# Office Documents
+# ==========================
+python-docx
+python-pptx
+openpyxl
+
+# ==========================
+# Data Processing
+# ==========================
+pandas
+numpy
+
+# ==========================
+# Images
+# ==========================
+Pillow
+
+# ==========================
+# Validation
+# ==========================
+jsonschema
+
+# ==========================
+# Environment
+# ==========================
+python-dotenv
+
+# ==========================
+# Utilities
+# ==========================
+tenacity
+tqdm
