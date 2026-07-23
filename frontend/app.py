@@ -13,7 +13,7 @@ st.set_page_config(
 # -----------------------------
 # Backend API URL
 # -----------------------------
-API_URL = "https://grateful-caring-production-d098.up.railway.app"
+API_URL = "https://grateful-caring-production-d098.up.railway.app/crawl"
 
 # -----------------------------
 # UI
