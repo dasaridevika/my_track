@@ -15,7 +15,6 @@ from crawlers.jsonXpathExtraction import xpath_extract
 from crawlers.RegexExtraction import regex_extract
 from crawlers.pdfExtraction import pdf_extract
 from llm_analysis import analyze_extracted_data, extract_text_for_llm
-from llm_analysis import analyze_extracted_data
 # -------------------------------------------------------
 # Logging
 # -------------------------------------------------------
