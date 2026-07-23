@@ -1,5 +1,4 @@
 import os
-logger.info(f"RUNNING main.py SHA={os.getenv('RAILWAY_GIT_COMMIT_SHA')}")
 import sys
 import asyncio
 import logging
@@ -25,6 +24,7 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(message)s"
 )
 logger = logging.getLogger(__name__)
+logger.info(f"RUNNING main.py SHA={os.getenv('RAILWAY_GIT_COMMIT_SHA')}")
 # -------------------------------------------------------
 # FastAPI
 # -------------------------------------------------------
