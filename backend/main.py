@@ -72,40 +72,6 @@ async def crawl(request: CrawlRequest):
         logger.info(
             f"Incoming Request | Method={method} | URL={request.url}"
         )
-        handler = CRAWL_HANDLERS.get(method)
-        if handler is None:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Invalid method. "
-                    "Choose one of: "
-                    "single, deep, css, xpath, regex, pdf"
-                ),
-            )
-        result = await handler(request.url)
-        logger.info(
-            f"Completed Request | Method={method}"
-        )
-        return result
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("Unhandled Exception")
-        raise HTTPException(
-            status_code=500,
-            detail=(
-    "Invalid method. "
-    "Choose one of: "
-    "single, deep, dynamic, snapshot, css, xpath, regex, pdf"
-),
-        )
-@app.post("/crawl")
-async def crawl(request: CrawlRequest):
-    try:
-        method = request.method.lower()
-        logger.info(
-            f"Incoming Request | Method={method} | URL={request.url}"
-        )
 
         handler = CRAWL_HANDLERS.get(method)
         if handler is None:
