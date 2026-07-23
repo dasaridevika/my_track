@@ -1,6 +1,6 @@
 import httpx
 
-WORKER_ANALYZE_URL = "https://your-worker-name.your-subdomain.workers.dev/analyze"
+WORKER_ANALYZE_URL = "https://shrill-smoke-7541.devika-worker.workers.dev/analyze"
 
 def extract_text_for_llm(result: dict) -> str:
     for key in ["text", "content", "markdown", "data", "result"]:
