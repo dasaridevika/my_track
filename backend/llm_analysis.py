@@ -12,11 +12,11 @@ def extract_text_for_llm(result: dict) -> str:
 
 async def analyze_extracted_data(url: str, title: str, extracted_text: str, analysis_type: str = "summary"):
     payload = {
-        "url": url,
-        "title": title,
-        "extracted_text": extracted_text,
-        "analysis_type": analysis_type
-    }
+    "url": url,
+    "title": title,
+    "text": extracted_text,
+    "analysis_type": analysis_type
+}
 
     retries = 3
     delay = 2
