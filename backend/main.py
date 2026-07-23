@@ -1,3 +1,5 @@
+import os
+logger.info(f"RUNNING main.py SHA={os.getenv('RAILWAY_GIT_COMMIT_SHA')}")
 import sys
 import asyncio
 import logging
