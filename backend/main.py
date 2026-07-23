@@ -14,7 +14,7 @@ from crawlers.jsonCssExtraction import css_extract
 from crawlers.jsonXpathExtraction import xpath_extract
 from crawlers.RegexExtraction import regex_extract
 from crawlers.pdfExtraction import pdf_extract
-
+from llm_analysis import analyze_extracted_data, extract_text_for_llm
 from llm_analysis import analyze_extracted_data
 # -------------------------------------------------------
 # Logging
@@ -87,10 +87,11 @@ async def crawl(request: CrawlRequest):
         result = await handler(request.url)
 
         analysis = await analyze_extracted_data(
-            source_url=request.url,
-            extracted_result=result,
-            analysis_type="summary"
-        )
+    url=request.url,
+    title="",
+    extracted_text=extract_text_for_llm(result),
+    analysis_type="summary"
+)
 
         logger.info(
             f"Completed Request | Method={method} | AI Analysis Done"
