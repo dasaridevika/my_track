@@ -5,17 +5,17 @@ if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from .crawlers.page_snapshot import page_snapshot
-from .crawlers.deep_crawling_dynamic_pages import deep_crawl_bfs
-from .models import CrawlRequest
-from .crawlers.single_page import crawl_single_page
-from .crawlers.deepcrawl import deep_crawl
-from .crawlers.jsonCssExtraction import css_extract
-from .crawlers.jsonXpathExtraction import xpath_extract
-from .crawlers.RegexExtraction import regex_extract
-from .crawlers.pdfExtraction import pdf_extract
+from crawlers.page_snapshot import page_snapshot
+from crawlers.deep_crawling_dynamic_pages import deep_crawl_bfs
+from models import CrawlRequest
+from crawlers.single_page import crawl_single_page
+from crawlers.deepcrawl import deep_crawl
+from crawlers.jsonCssExtraction import css_extract
+from crawlers.jsonXpathExtraction import xpath_extract
+from crawlers.RegexExtraction import regex_extract
+from crawlers.pdfExtraction import pdf_extract
 
-from .llm_analysis import analyze_extracted_data
+from llm_analysis import analyze_extracted_data
 # -------------------------------------------------------
 # Logging
 # -------------------------------------------------------
