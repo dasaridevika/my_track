@@ -14,7 +14,7 @@ st.set_page_config(
 # -----------------------------
 API_URL = os.getenv(
     "API_URL",
-    "https://grateful-caring-production-d098.up.railway.app/crawl"
+    "https://grateful-caring-production-d098.up.railway.app/"
 )
 # -----------------------------
 # UI
