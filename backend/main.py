@@ -21,28 +21,20 @@ from crawlers.RegexExtraction import regex_extract
 from crawlers.pdfExtraction import pdf_extract
 from llm_analysis import analyze_extracted_data, extract_text_for_llm
 
-# -------------------------------------------------------
-# Logging
-# -------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s"
+    format="%(asctime)s | %(levelname)s | %(message)s",
+    force=True
 )
 logger = logging.getLogger(__name__)
 logger.info(f"RUNNING main.py SHA={os.getenv('RAILWAY_GIT_COMMIT_SHA')}")
-logger.info("NEW MAIN.PY VERSION WITH SAFE LLM HANDLING LOADED")
+logger.info("SAFE MAIN.PY LOADED")
 
-# -------------------------------------------------------
-# FastAPI
-# -------------------------------------------------------
 app = FastAPI(
     title="Crawl4AI API",
     version="1.0.0"
 )
 
-# -------------------------------------------------------
-# CORS
-# -------------------------------------------------------
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "*")
 
 if FRONTEND_ORIGIN == "*":
@@ -62,19 +54,13 @@ else:
         allow_headers=["*"],
     )
 
-# -------------------------------------------------------
-# Root Endpoint
-# -------------------------------------------------------
 @app.get("/")
 async def root():
     return {
         "message": "Crawl4AI API Running 🚀",
-        "version_marker": "safe-llm-v3"
+        "version_marker": "safe-llm-v4"
     }
 
-# -------------------------------------------------------
-# Optional favicon route
-# -------------------------------------------------------
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     favicon_path = "favicon.ico"
@@ -82,9 +68,6 @@ async def favicon():
         return FileResponse(favicon_path)
     raise HTTPException(status_code=404, detail="Favicon not found")
 
-# -------------------------------------------------------
-# Supported Crawlers
-# -------------------------------------------------------
 CRAWL_HANDLERS = {
     "single": crawl_single_page,
     "deep": deep_crawl,
@@ -96,9 +79,6 @@ CRAWL_HANDLERS = {
     "pdf": pdf_extract,
 }
 
-# -------------------------------------------------------
-# Crawl Endpoint
-# -------------------------------------------------------
 @app.post("/crawl")
 async def crawl(request: CrawlRequest):
     try:
@@ -131,6 +111,7 @@ async def crawl(request: CrawlRequest):
                     "skipped": True,
                     "reason": "LLM analysis skipped because no extracted text was available for this crawl method."
                 }
+                logger.info(f"Completed Request | Method={method} | LLM Skipped")
             else:
                 analysis = await analyze_extracted_data(
                     url=request.url,
@@ -138,12 +119,11 @@ async def crawl(request: CrawlRequest):
                     extracted_text=extracted_text,
                     analysis_type="summary"
                 )
+                logger.info(f"Completed Request | Method={method} | AI Analysis Done")
 
         except Exception as e:
             logger.exception("LLM analysis failed but crawl will continue")
             analysis_error = str(e)
-
-        logger.info(f"Completed Request | Method={method}")
 
         return {
             "success": True,
