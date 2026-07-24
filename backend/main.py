@@ -122,12 +122,23 @@ async def crawl(request: CrawlRequest):
         analysis_error = None
 
         try:
-            analysis = await analyze_extracted_data(
-                url=request.url,
-                title="",
-                extracted_text=extract_text_for_llm(result),
-                analysis_type="summary"
-            )
+            extracted_text = extract_text_for_llm(result)
+            logger.info(f"LLM text length for method={method}: {len(extracted_text or '')}")
+
+            if method == "snapshot" or not extracted_text or not extracted_text.strip():
+                analysis = {
+                    "success": False,
+                    "skipped": True,
+                    "reason": "LLM analysis skipped because no extracted text was available for this crawl method."
+                }
+            else:
+                analysis = await analyze_extracted_data(
+                    url=request.url,
+                    title="",
+                    extracted_text=extracted_text,
+                    analysis_type="summary"
+                )
+
         except Exception as e:
             logger.exception("LLM analysis failed but crawl will continue")
             analysis_error = str(e)
