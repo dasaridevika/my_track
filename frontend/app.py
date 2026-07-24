@@ -14,16 +14,16 @@ st.set_page_config(
 # -----------------------------
 API_URL = os.getenv(
     "API_URL",
-    "https://grateful-caring-production-d098.up.railway.app/"
+    "https://grateful-caring-production-d098.up.railway.app"
 )
 # -----------------------------
 # UI
 # -----------------------------
 st.title("🕷️ Crawl4AI Web Scraper")
 st.write("Extract structured information from websites using Crawl4AI.")
-url = st.text_input("🌐 Enter Website URL")
+url = st.text_input(" Enter Website URL")
 method = st.selectbox(
-    "📌 Select Extraction Method",
+    " Select Extraction Method",
     [
         "single",
         "deep",
@@ -38,7 +38,7 @@ method = st.selectbox(
 # -----------------------------
 # Crawl Button
 # -----------------------------
-if st.button("🚀 Start Crawling", use_container_width=True):
+if st.button(" Start Crawling", use_container_width=True):
     if not url.strip():
         st.warning("Please enter a URL.")
     else:
@@ -54,7 +54,7 @@ if st.button("🚀 Start Crawling", use_container_width=True):
                     timeout=300
                 )
             if response.status_code == 200:
-                st.success("✅ Crawling Completed!")
+                st.success("Crawling Completed!")
                 res_data = response.json()
                 data = res_data.get("data", res_data)
                 # ===========================================
@@ -118,21 +118,21 @@ if st.button("🚀 Start Crawling", use_container_width=True):
                 # PDF Extraction
                 # ===========================================
                 elif method == "pdf":
-                    st.subheader("📄 PDF Extraction")
+                    st.subheader(" PDF Extraction")
                     extracted = data.get("extracted_data", data)
                     st.json(extracted)
                 # ===========================================
                 # CSS / XPath / Regex / Single
                 # ===========================================
                 else:
-                    st.subheader("📄 Extraction Result")
+                    st.subheader("Extraction Result")
                     extracted = data.get("extracted_data", data)
                     st.json(extracted)
                 if data.get("llm_analysis"):
-                    st.subheader("🧠 AI Analysis")
+                    st.subheader(" AI Analysis")
                     st.write(data["llm_analysis"])
             else:
-                st.error(f"❌ API Error: {response.status_code}")
+                st.error(f" API Error: {response.status_code}")
                 try:
                     st.json(response.json())
                 except Exception:
@@ -143,7 +143,7 @@ if st.button("🚀 Start Crawling", use_container_width=True):
             )
         except requests.exceptions.ConnectionError:
             st.error(
-                "❌ Unable to connect to the backend API. Please ensure the backend is running."
+                "Unable to connect to the backend API. Please ensure the backend is running."
             )
         except Exception as e:
             st.error(f"Unexpected Error: {e}")
