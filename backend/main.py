@@ -16,6 +16,7 @@ from crawlers.jsonXpathExtraction import xpath_extract
 from crawlers.RegexExtraction import regex_extract
 from crawlers.pdfExtraction import pdf_extract
 from llm_analysis import analyze_extracted_data, extract_text_for_llm
+from fastapi.responses import FileResponse
 # -------------------------------------------------------
 # Logging
 # -------------------------------------------------------
@@ -114,3 +115,6 @@ async def crawl(request: CrawlRequest):
             status_code=500,
             detail=str(e),
         )
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return FileResponse("favicon.ico")
