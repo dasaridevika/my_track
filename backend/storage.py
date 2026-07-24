@@ -44,20 +44,26 @@ def upload_file(local_path: str, object_key: str):
             object_key,
             ExtraArgs={"ContentType": content_type},
         )
+
     return {
         "bucket": BUCKET_NAME,
         "key": object_key,
         "content_type": content_type,
         "filename": path.name,
     }
+
+
 def get_download_url(object_key: str, expires_in: int = 3600, filename: str | None = None):
     if not is_bucket_configured():
         raise RuntimeError("Bucket credentials are missing.")
+
     s3 = get_s3_client()
+
     params = {
         "Bucket": BUCKET_NAME,
         "Key": object_key,
     }
+
     if filename:
         params["ResponseContentDisposition"] = f'attachment; filename="{filename}"'
     return s3.generate_presigned_url(
