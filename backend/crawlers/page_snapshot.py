@@ -109,9 +109,10 @@ async def page_snapshot(url: str):
         logger.warning(f"Could not clean output directory {output_dir}: {dir_cleanup_error}")
 
     return {
-        "success": True,
-        "method": "snapshot",
-        "url": url,
-        "job_id": job_id,
-        "files": uploaded_files,
-    }
+    "success": True,
+    "method": "snapshot",
+    "url": url,
+    "job_id": job_id,
+    "storage_mode": "bucket" if is_bucket_configured() else "local",
+    "files": uploaded_files or {},
+}
