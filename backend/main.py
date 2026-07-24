@@ -2,10 +2,14 @@ import os
 import sys
 import asyncio
 import logging
+
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+
 from crawlers.page_snapshot import page_snapshot
 from crawlers.deep_crawling_dynamic_pages import deep_crawl_bfs
 from models import CrawlRequest
@@ -16,7 +20,7 @@ from crawlers.jsonXpathExtraction import xpath_extract
 from crawlers.RegexExtraction import regex_extract
 from crawlers.pdfExtraction import pdf_extract
 from llm_analysis import analyze_extracted_data, extract_text_for_llm
-from fastapi.responses import FileResponse
+
 # -------------------------------------------------------
 # Logging
 # -------------------------------------------------------
@@ -26,6 +30,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 logger.info(f"RUNNING main.py SHA={os.getenv('RAILWAY_GIT_COMMIT_SHA')}")
+
 # -------------------------------------------------------
 # FastAPI
 # -------------------------------------------------------
@@ -33,10 +38,12 @@ app = FastAPI(
     title="Crawl4AI API",
     version="1.0.0"
 )
+
 # -------------------------------------------------------
 # CORS
 # -------------------------------------------------------
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "*")
+
 if FRONTEND_ORIGIN == "*":
     app.add_middleware(
         CORSMiddleware,
@@ -53,6 +60,7 @@ else:
         allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["*"],
     )
+
 # -------------------------------------------------------
 # Root Endpoint
 # -------------------------------------------------------
@@ -61,6 +69,17 @@ async def root():
     return {
         "message": "Crawl4AI API Running 🚀"
     }
+
+# -------------------------------------------------------
+# Optional favicon route
+# -------------------------------------------------------
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    favicon_path = "favicon.ico"
+    if os.path.exists(favicon_path):
+        return FileResponse(favicon_path)
+    raise HTTPException(status_code=404, detail="Favicon not found")
+
 # -------------------------------------------------------
 # Supported Crawlers
 # -------------------------------------------------------
@@ -74,6 +93,7 @@ CRAWL_HANDLERS = {
     "regex": regex_extract,
     "pdf": pdf_extract,
 }
+
 # -------------------------------------------------------
 # Crawl Endpoint
 # -------------------------------------------------------
@@ -82,6 +102,7 @@ async def crawl(request: CrawlRequest):
     try:
         method = request.method.lower()
         logger.info(f"Incoming Request | Method={method} | URL={request.url}")
+
         handler = CRAWL_HANDLERS.get(method)
         if handler is None:
             raise HTTPException(
@@ -92,21 +113,34 @@ async def crawl(request: CrawlRequest):
                     "single, deep, dynamic, snapshot, css, xpath, regex, pdf"
                 ),
             )
+
         result = await handler(request.url)
-        analysis = await analyze_extracted_data(
-            url=request.url,
-            title="",
-            extracted_text=extract_text_for_llm(result),
-            analysis_type="summary"
-        )
-        logger.info(f"Completed Request | Method={method} | AI Analysis Done")
+
+        analysis = None
+        analysis_error = None
+
+        try:
+            analysis = await analyze_extracted_data(
+                url=request.url,
+                title="",
+                extracted_text=extract_text_for_llm(result),
+                analysis_type="summary"
+            )
+        except Exception as e:
+            logger.exception("LLM analysis failed")
+            analysis_error = str(e)
+
+        logger.info(f"Completed Request | Method={method}")
+
         return {
             "success": True,
             "method": method,
             "url": request.url,
             "extracted_data": result,
-            "llm_analysis": analysis
+            "llm_analysis": analysis,
+            "llm_analysis_error": analysis_error
         }
+
     except HTTPException:
         raise
     except Exception as e:
@@ -115,6 +149,3 @@ async def crawl(request: CrawlRequest):
             status_code=500,
             detail=str(e),
         )
-@app.get("/favicon.ico", include_in_schema=False)
-async def favicon():
-    return FileResponse("favicon.ico")
