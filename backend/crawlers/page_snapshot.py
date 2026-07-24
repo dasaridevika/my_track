@@ -1,36 +1,31 @@
 import os
 import base64
 import uuid
-
+import logging
 from crawl4ai import (
     AsyncWebCrawler,
     BrowserConfig,
     CrawlerRunConfig,
     CacheMode,
 )
-
 from storage import is_bucket_configured, upload_file, get_download_url
-
+logger = logging.getLogger(__name__)
 async def page_snapshot(url: str):
     job_id = str(uuid.uuid4())
     output_dir = os.path.join("outputs", job_id)
     os.makedirs(output_dir, exist_ok=True)
-
     browser_config = BrowserConfig(
         headless=True,
         verbose=True,
     )
-
     crawler_config = CrawlerRunConfig(
         cache_mode=CacheMode.BYPASS,
         screenshot=True,
         pdf=True,
         capture_mhtml=True,
     )
-
     async with AsyncWebCrawler(config=browser_config) as crawler:
         result = await crawler.arun(url=url, config=crawler_config)
-
     if not result.success:
         return {
             "success": False,
@@ -38,54 +33,50 @@ async def page_snapshot(url: str):
             "url": url,
             "message": "Crawl failed",
         }
-
     uploaded_files = {}
-
+    def handle_file(file_type: str, local_path: str, bucket_key: str):
+        try:
+            if is_bucket_configured():
+                upload_file(local_path, bucket_key)
+                file_data = {
+                    "key": bucket_key,
+                    "url": get_download_url(bucket_key),
+                    "storage": "bucket",
+                }
+                try:
+                    os.remove(local_path)
+                except Exception as cleanup_error:
+                    logger.warning(f"Could not delete local file {local_path}: {cleanup_error}")
+                return file_data
+            return {
+                "local_path": local_path,
+                "storage": "local",
+            }
+        except Exception as upload_error:
+            logger.exception(f"Upload failed for {file_type}: {upload_error}")
+            return {
+                "local_path": local_path,
+                "storage": "local",
+                "upload_error": str(upload_error),
+            }
     if result.screenshot:
         screenshot_path = os.path.join(output_dir, "screenshot.png")
         with open(screenshot_path, "wb") as file:
             file.write(base64.b64decode(result.screenshot))
-
-        if is_bucket_configured():
-            key = f"pagesnapshots/{job_id}/screenshot.png"
-            upload_file(screenshot_path, key)
-            uploaded_files["screenshot"] = {
-                "key": key,
-                "url": get_download_url(key),
-            }
-        else:
-            uploaded_files["screenshot"] = {"local_path": screenshot_path}
-
+        key = f"pagesnapshots/{job_id}/screenshot.png"
+        uploaded_files["screenshot"] = handle_file("screenshot", screenshot_path, key)
     if result.pdf:
         pdf_path = os.path.join(output_dir, "page.pdf")
         with open(pdf_path, "wb") as file:
             file.write(result.pdf)
-
-        if is_bucket_configured():
-            key = f"pagesnapshots/{job_id}/page.pdf"
-            upload_file(pdf_path, key)
-            uploaded_files["pdf"] = {
-                "key": key,
-                "url": get_download_url(key),
-            }
-        else:
-            uploaded_files["pdf"] = {"local_path": pdf_path}
-
+        key = f"pagesnapshots/{job_id}/page.pdf"
+        uploaded_files["pdf"] = handle_file("pdf", pdf_path, key)
     if result.mhtml:
         mhtml_path = os.path.join(output_dir, "page.mhtml")
         with open(mhtml_path, "w", encoding="utf-8") as file:
             file.write(result.mhtml)
-
-        if is_bucket_configured():
-            key = f"pagesnapshots/{job_id}/page.mhtml"
-            upload_file(mhtml_path, key)
-            uploaded_files["mhtml"] = {
-                "key": key,
-                "url": get_download_url(key),
-            }
-        else:
-            uploaded_files["mhtml"] = {"local_path": mhtml_path}
-
+        key = f"pagesnapshots/{job_id}/page.mhtml"
+        uploaded_files["mhtml"] = handle_file("mhtml", mhtml_path, key)
     return {
         "success": True,
         "method": "snapshot",
