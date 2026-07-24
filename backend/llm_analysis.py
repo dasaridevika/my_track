@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 WORKER_ANALYZE_URL = os.getenv(
     "LLM_ANALYSIS_URL",
-    "https://shrill-smoke-7541.devika-worker.workers.dev/analyze"
+    "https://shrill-smoke-7541.devika-worker.workers.dev"
 ).strip()
 
 
