@@ -2,5 +2,7 @@
 builder = "NIXPACKS"
 buildCommand = "pip install -r requirements.txt"
 [deploy]
-startCommand = "streamlit run app.py --server.address 0.0.0.0 --server.port $PORT --server.fileWatcherType none --browser.gatherUsageStats false"
+startCommand = "streamlit run app.py --server.address 0.0.0.0 --server.port $PORT"
+healthcheckPath = "/"
+healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
