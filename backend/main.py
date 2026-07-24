@@ -30,6 +30,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 logger.info(f"RUNNING main.py SHA={os.getenv('RAILWAY_GIT_COMMIT_SHA')}")
+logger.info("NEW MAIN.PY VERSION WITH SAFE LLM HANDLING LOADED")
 
 # -------------------------------------------------------
 # FastAPI
@@ -67,7 +68,8 @@ else:
 @app.get("/")
 async def root():
     return {
-        "message": "Crawl4AI API Running 🚀"
+        "message": "Crawl4AI API Running 🚀",
+        "version_marker": "safe-llm-v3"
     }
 
 # -------------------------------------------------------
@@ -127,7 +129,7 @@ async def crawl(request: CrawlRequest):
                 analysis_type="summary"
             )
         except Exception as e:
-            logger.exception("LLM analysis failed")
+            logger.exception("LLM analysis failed but crawl will continue")
             analysis_error = str(e)
 
         logger.info(f"Completed Request | Method={method}")
