@@ -1,5 +1,6 @@
 import os
 import base64
+import uuid
 
 from crawl4ai import (
     AsyncWebCrawler,
@@ -8,18 +9,18 @@ from crawl4ai import (
     CacheMode,
 )
 
+from storage import is_bucket_configured, upload_file, get_download_url
 
 async def page_snapshot(url: str):
-    # Create output directory
-    os.makedirs("outputs", exist_ok=True)
+    job_id = str(uuid.uuid4())
+    output_dir = os.path.join("outputs", job_id)
+    os.makedirs(output_dir, exist_ok=True)
 
-    # Browser configuration
     browser_config = BrowserConfig(
         headless=True,
         verbose=True,
     )
 
-    # Crawl configuration
     crawler_config = CrawlerRunConfig(
         cache_mode=CacheMode.BYPASS,
         screenshot=True,
@@ -27,14 +28,9 @@ async def page_snapshot(url: str):
         capture_mhtml=True,
     )
 
-    # Launch crawler
     async with AsyncWebCrawler(config=browser_config) as crawler:
-        result = await crawler.arun(
-            url=url,
-            config=crawler_config,
-        )
+        result = await crawler.arun(url=url, config=crawler_config)
 
-    # Return if crawl failed
     if not result.success:
         return {
             "success": False,
@@ -43,34 +39,57 @@ async def page_snapshot(url: str):
             "message": "Crawl failed",
         }
 
-    screenshot_path = None
-    pdf_path = None
-    mhtml_path = None
+    uploaded_files = {}
 
-    # Save Screenshot
     if result.screenshot:
-        screenshot_path = "outputs/screenshot.png"
+        screenshot_path = os.path.join(output_dir, "screenshot.png")
         with open(screenshot_path, "wb") as file:
             file.write(base64.b64decode(result.screenshot))
 
-    # Save PDF
+        if is_bucket_configured():
+            key = f"pagesnapshots/{job_id}/screenshot.png"
+            upload_file(screenshot_path, key)
+            uploaded_files["screenshot"] = {
+                "key": key,
+                "url": get_download_url(key),
+            }
+        else:
+            uploaded_files["screenshot"] = {"local_path": screenshot_path}
+
     if result.pdf:
-        pdf_path = "outputs/page.pdf"
+        pdf_path = os.path.join(output_dir, "page.pdf")
         with open(pdf_path, "wb") as file:
             file.write(result.pdf)
 
-    # Save MHTML
+        if is_bucket_configured():
+            key = f"pagesnapshots/{job_id}/page.pdf"
+            upload_file(pdf_path, key)
+            uploaded_files["pdf"] = {
+                "key": key,
+                "url": get_download_url(key),
+            }
+        else:
+            uploaded_files["pdf"] = {"local_path": pdf_path}
+
     if result.mhtml:
-        mhtml_path = "outputs/page.mhtml"
+        mhtml_path = os.path.join(output_dir, "page.mhtml")
         with open(mhtml_path, "w", encoding="utf-8") as file:
             file.write(result.mhtml)
 
-    # Return response
+        if is_bucket_configured():
+            key = f"pagesnapshots/{job_id}/page.mhtml"
+            upload_file(mhtml_path, key)
+            uploaded_files["mhtml"] = {
+                "key": key,
+                "url": get_download_url(key),
+            }
+        else:
+            uploaded_files["mhtml"] = {"local_path": mhtml_path}
+
     return {
         "success": True,
         "method": "snapshot",
         "url": url,
-        "screenshot": screenshot_path,
-        "pdf": pdf_path,
-        "mhtml": mhtml_path,
+        "job_id": job_id,
+        "files": uploaded_files,
     }
