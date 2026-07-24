@@ -35,13 +35,23 @@ app = FastAPI(
 # -------------------------------------------------------
 # CORS
 # -------------------------------------------------------
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],      # Replace with your frontend URL in production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "*")
+if FRONTEND_ORIGIN == "*":
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[FRONTEND_ORIGIN],
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["*"],
+    )
 # -------------------------------------------------------
 # Root Endpoint
 # -------------------------------------------------------
@@ -70,10 +80,7 @@ CRAWL_HANDLERS = {
 async def crawl(request: CrawlRequest):
     try:
         method = request.method.lower()
-        logger.info(
-            f"Incoming Request | Method={method} | URL={request.url}"
-        )
-
+        logger.info(f"Incoming Request | Method={method} | URL={request.url}")
         handler = CRAWL_HANDLERS.get(method)
         if handler is None:
             raise HTTPException(
@@ -84,20 +91,14 @@ async def crawl(request: CrawlRequest):
                     "single, deep, dynamic, snapshot, css, xpath, regex, pdf"
                 ),
             )
-
         result = await handler(request.url)
-
         analysis = await analyze_extracted_data(
-    url=request.url,
-    title="",
-    extracted_text=extract_text_for_llm(result),
-    analysis_type="summary"
-)
-
-        logger.info(
-            f"Completed Request | Method={method} | AI Analysis Done"
+            url=request.url,
+            title="",
+            extracted_text=extract_text_for_llm(result),
+            analysis_type="summary"
         )
-
+        logger.info(f"Completed Request | Method={method} | AI Analysis Done")
         return {
             "success": True,
             "method": method,
@@ -105,7 +106,6 @@ async def crawl(request: CrawlRequest):
             "extracted_data": result,
             "llm_analysis": analysis
         }
-
     except HTTPException:
         raise
     except Exception as e:
