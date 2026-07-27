@@ -57,8 +57,14 @@ async def analyze_extracted_data(
         "text": cleaned_text,
         "analysis_type": analysis_type
     }
-    retries = 3
-    delay = 2
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        response = await client.post(WORKER_ANALYZE_URL, json=payload)
+        if response.status_code == 200:
+            return response.json()
+        error_body = response.text
+        raise Exception(
+            f"LLM analysis failed with status {response.status_code}: {error_body}"
+        )
     async with httpx.AsyncClient(timeout=60.0) as client:
         for attempt in range(retries):
             response = await client.post(WORKER_ANALYZE_URL, json=payload)
