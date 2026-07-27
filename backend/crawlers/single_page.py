@@ -2,8 +2,9 @@ import asyncio
 from crawl4ai import AsyncWebCrawler
 async def crawl_single_page(url: str):
     async with AsyncWebCrawler() as crawler:
-        result = await crawler.arun(url=url)
-        return {
+        async with asyncio.timeout(80):
+            result = await crawler.arun(url=url,config=run_config)
+            return {
             "success": result.success,
             "url": url,
             "markdown": result.markdown,
