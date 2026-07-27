@@ -1,5 +1,6 @@
 import os
 import uuid
+import asyncio
 from pathlib import Path
 from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
 from crawl4ai.processors.pdf import (
@@ -11,27 +12,33 @@ async def pdf_extract(url: str):
     image_dir = Path("pdf_images") / job_id
     image_dir.mkdir(parents=True, exist_ok=True)
     pdf_scraper = PDFContentScrapingStrategy(
-    extract_images=True,
-    save_images_locally=True,
-    image_save_dir=str(image_dir),
-    batch_size=2,
-)
+        extract_images=True,
+        save_images_locally=True,
+        image_save_dir=str(image_dir),
+        batch_size=2,
+    )
     run_config = CrawlerRunConfig(
         scraping_strategy=pdf_scraper
     )
-    async with AsyncWebCrawler(
-        crawler_strategy=PDFCrawlerStrategy()
-    ) as crawler:
-        result = await crawler.arun(
-            url=url,
-            config=run_config
-        )
+    try:
+        async with AsyncWebCrawler(
+            crawler_strategy=PDFCrawlerStrategy()
+        ) as crawler:
+            async with asyncio.timeout(80):
+                result = await crawler.arun(
+                    url=url,
+                    config=run_config
+                )
+    except asyncio.TimeoutError:
+        return {
+            "success": False,
+            "error": "Crawler request timed out after 80 seconds."
+        }
     if not result.success:
         return {
             "success": False,
             "error": result.error_message
         }
-    # Handle markdown safely
     markdown = (
         result.markdown.raw_markdown
         if hasattr(result.markdown, "raw_markdown")
