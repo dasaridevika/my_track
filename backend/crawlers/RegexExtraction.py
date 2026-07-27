@@ -8,7 +8,7 @@ patterns = {
     "urls": r"https?://[^\s\"'>]+"
 }
 async def regex_extract(url: str):
-    strategy = RegexExtractionStrategy(patterns=patterns)
+    strategy = RegexExtractionStrategy(custom=patterns)
 
     async with AsyncWebCrawler() as crawler:
         result = await crawler.arun(
