@@ -176,14 +176,15 @@ async def extract_pdf(url: str):
     temp_path = None
     try:
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
+        browser = await p.chromium.launch(headless=True)
+        try:
             page = await browser.new_page()
-            download = None
             async with page.expect_download() as download_info:
                 await page.goto(url)
             download = await download_info.value
             temp_path = tempfile.mktemp(suffix=".pdf")
             await download.save_as(temp_path)
+        finally:
             await browser.close()
         document = fitz.open(temp_path)
         pages = []
@@ -226,8 +227,10 @@ async def extract_excel(url: str):
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
             page = await browser.new_page()
+
             async with page.expect_download() as download_info:
                 await page.goto(url)
+
             download = await download_info.value
             temp_path = tempfile.mktemp(suffix=".xlsx")
             await download.save_as(temp_path)
