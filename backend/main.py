@@ -43,6 +43,7 @@ CRAWL_HANDLERS = {
 analysis_queue: asyncio.Queue = asyncio.Queue()
 analysis_jobs = {}
 analysis_semaphore = asyncio.Semaphore(1)
+crawl_semaphore = asyncio.Semaphore(3)
 async def process_analysis_job(job_id: str, payload: dict):
     try:
         analysis_jobs[job_id]["status"] = "running"
@@ -187,7 +188,8 @@ async def crawl(request: CrawlRequest):
                 status_code=400,
                 detail="Invalid method. Choose one of: single, deep, dynamic, snapshot, css, xpath, regex, pdf",
             )
-        result = await handler(request.url)
+        async with crawl_semaphore:
+            result = await handler(request.url)
         if method == "snapshot":
             result = normalize_snapshot_result(result, request.url, PUBLIC_BASE_URL)
         extracted_text = extract_text_for_llm(result)
