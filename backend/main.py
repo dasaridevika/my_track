@@ -3,7 +3,7 @@ import sys
 import uuid
 import asyncio
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 from fastapi import FastAPI, HTTPException
@@ -76,7 +76,7 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         worker_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
+        with suppress(asyncio.CancelledError):
             await worker_task
 app = FastAPI(
     title="Crawl4AI API",
