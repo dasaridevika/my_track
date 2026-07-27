@@ -274,13 +274,15 @@ async def extract_csv(url: str):
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
-            async with page.expect_download() as download_info:
-                await page.goto(url)
-            download = await download_info.value
-            temp_path = tempfile.mktemp(suffix=".csv")
-            await download.save_as(temp_path)
-            await browser.close()
+            try:
+                page = await browser.new_page()
+                async with page.expect_download() as download_info:
+                    await page.goto(url)
+                download = await download_info.value
+                temp_path = tempfile.mktemp(suffix=".csv")
+                await download.save_as(temp_path)
+            finally:
+                await browser.close()
         df = pd.read_csv(temp_path)
         return build_response(
             True,
