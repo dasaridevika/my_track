@@ -10,7 +10,7 @@ boto3==1.43.56
 # Crawl4AI
 # ==========================
 crawl4ai==0.9.2
-playwright==0.60.1
+playwright==1.60.1
 nest-asyncio==1.6.0
 # ==========================
 # HTTP
