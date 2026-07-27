@@ -1,22 +1,21 @@
 import json
-from crawl4ai import AsyncWebCrawler
+import asyncio
+from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
 from crawl4ai.extraction_strategy import RegexExtractionStrategy
 
 patterns = {
     "emails": r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
     "phones": r"\+?\d[\d\s()-]{8,}\d",
     "dates": r"\b\d{2}[/-]\d{2}[/-]\d{4}\b",
-    "urls": r"https?://[^\s\"'>]+"
+    "urls": r"https?://[^\s\"'>]+",
 }
 
 async def regex_extract(url: str):
     strategy = RegexExtractionStrategy(custom=patterns)
+    config = CrawlerRunConfig(extraction_strategy=strategy)
 
     async with AsyncWebCrawler() as crawler:
-        result = await crawler.arun(
-            url=url,
-            extraction_strategy=strategy
-        )
+        result = await crawler.arun(url=url, config=config)
 
     return {
         "success": result.success,
@@ -27,8 +26,6 @@ async def regex_extract(url: str):
     }
 
 if __name__ == "__main__":
-    import asyncio
-
     async def main():
         data = await regex_extract("https://www.geeksforgeeks.org")
         print(json.dumps(data, indent=4, default=str))
