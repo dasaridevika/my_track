@@ -65,20 +65,3 @@ async def analyze_extracted_data(
         raise Exception(
             f"LLM analysis failed with status {response.status_code}: {error_body}"
         )
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        for attempt in range(retries):
-            response = await client.post(WORKER_ANALYZE_URL, json=payload)
-            if response.status_code == 200:
-                return response.json()
-            if response.status_code == 429:
-                retry_after = response.headers.get("Retry-After")
-                wait_time = int(retry_after) if retry_after and retry_after.isdigit() else delay
-                logger.warning(f"Rate limited by Worker. Waiting {wait_time}s before retry.")
-                await asyncio.sleep(wait_time)
-                delay *= 2
-                continue
-            error_body = response.text
-            raise Exception(
-                f"LLM analysis failed with status {response.status_code}: {error_body}"
-            )
-    raise Exception("LLM analysis failed after multiple retries due to rate limiting.")
