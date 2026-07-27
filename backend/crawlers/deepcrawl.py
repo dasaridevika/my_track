@@ -1,4 +1,5 @@
 import asyncio
+import httpx
 import json
 import logging
 import os
@@ -63,25 +64,19 @@ SUPPORTED_TYPES = {
 ##########################################################
 async def detect_file_type(url: str):
     """
-    Detect file type using Playwright response headers.
-    Falls back to URL extension if needed.
+    Detect file type using HTTP HEAD request.
+    Falls back to GET if HEAD is unsupported.
+    Falls back to URL extension if both fail.
     """
     try:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
-            response = await page.goto(
-                url,
-                wait_until="domcontentloaded",
-                timeout=30000
-            )
-            content_type = ""
-            if response:
-                content_type = response.headers.get(
-                    "content-type",
-                    ""
-                ).lower()
-            await browser.close()
+        async with httpx.AsyncClient(follow_redirects=True, timeout=15.0) as client:
+            response = await client.head(url)
+            if response.status_code in (405, 501):
+                response = await client.get(url)
+            content_type = response.headers.get(
+                "content-type",
+                ""
+            ).lower()
             if "text/html" in content_type:
                 return "html"
             elif "application/pdf" in content_type:
@@ -103,7 +98,7 @@ async def detect_file_type(url: str):
             elif "text/plain" in content_type:
                 return "txt"
     except Exception as e:
-        logger.warning(f"Playwright detection failed: {e}")
+        logger.warning(f"HTTP detection failed: {e}")
     extension = os.path.splitext(
         urlparse(url).path
     )[1].lower()
