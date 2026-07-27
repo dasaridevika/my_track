@@ -1,3 +1,4 @@
+import asyncio
 import json
 from crawl4ai import AsyncWebCrawler
 from crawl4ai.extraction_strategy import JsonXPathExtractionStrategy
@@ -25,21 +26,27 @@ schema = {
 }
 async def xpath_extract(url: str):
     strategy = JsonXPathExtractionStrategy(schema)
-    async with AsyncWebCrawler() as crawler:
-        result = await crawler.arun(
-            url=url,
-            extraction_strategy=strategy
-        )
-    return {
-        "success": result.success,
-        "url": result.url,
-        "extracted_content": result.extracted_content,
-        "markdown": result.markdown,
-        "metadata": result.metadata,
-    }
+    try:
+        async with AsyncWebCrawler() as crawler:
+            async with asyncio.timeout(80):
+                result = await crawler.arun(
+                    url=url,
+                    extraction_strategy=strategy
+                )
+        return {
+            "success": result.success,
+            "url": result.url,
+            "extracted_content": result.extracted_content,
+            "markdown": result.markdown,
+            "metadata": result.metadata,
+        }
+    except asyncio.TimeoutError:
+        return {
+            "success": False,
+            "error": "Crawler request timed out after 80 seconds."
+        }
 # Optional: Run this file directly for testing
 if __name__ == "__main__":
-    import asyncio
     async def main():
         data = await xpath_extract("https://www.geeksforgeeks.org")
         print(json.dumps(data, indent=4, default=str))
