@@ -12,13 +12,6 @@ boto3
 crawl4ai
 playwright
 nest-asyncio
-
-# ==========================
-# AI / Scoring
-# ==========================
-torch
-sentence-transformers
-
 # ==========================
 # HTTP
 # ==========================
