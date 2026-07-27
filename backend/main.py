@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "*")
 PUBLIC_BASE_URL = os.getenv(
     "PUBLIC_BASE_URL",
-    "https://grateful-caring-production-d098.up.railway.app"
+    ""
 ).rstrip("/")
 CRAWL_HANDLERS = {
     "single": crawl_single_page,
@@ -40,8 +40,8 @@ CRAWL_HANDLERS = {
     "regex": regex_extract,
     "pdf": pdf_extract,
 }
-analysis_queue: asyncio.Queue = asyncio.Queue()
-analysis_jobs = {}
+analysis_queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+analysis_jobs[job_id]["completed_at"] = time.time()
 analysis_semaphore = asyncio.Semaphore(1)
 crawl_semaphore = asyncio.Semaphore(3)
 async def process_analysis_job(job_id: str, payload: dict):
@@ -58,7 +58,7 @@ async def process_analysis_job(job_id: str, payload: dict):
         analysis_jobs[job_id]["result"] = result
         logger.info(f"Analysis completed | job_id={job_id}")
     except Exception as e:
-        logger.exception(f"Analysis failed | job_id={job_id}")
+        logger.exception("Analysis failed | job_id=%s",job_id)
         analysis_jobs[job_id]["status"] = "failed"
         analysis_jobs[job_id]["error"] = str(e)
 async def analysis_worker():
@@ -217,7 +217,9 @@ async def crawl(request: CrawlRequest):
             logger.info(f"Analysis queued | job_id={analysis_job_id} | method={method}")
         else:
             logger.info(f"LLM analysis skipped | method={method}")
-        return {
+        return JSONResponse(
+            status_code=200,
+            content={
             "success": True,
             "method": method,
             "url": request.url,
@@ -225,6 +227,7 @@ async def crawl(request: CrawlRequest):
             "analysis_job_id": analysis_job_id,
             "analysis_status": analysis_status
         }
+    )
     except HTTPException:
         raise
     except Exception as e:
