@@ -262,50 +262,21 @@ async def extract_excel(url: str):
 ##########################################################
 # CSV Extraction
 ##########################################################
-async def extract_excel(url: str):
-    logger.info(f"Extracting Excel: {url}")
-    temp_path = None
+async def extract_csv(url: str):
+    temp_path = await download_file(url, ".csv")
     try:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            try:
-                page = await browser.new_page()
-                async with page.expect_download() as download_info:
-                    await page.goto(url)
-                download = await download_info.value
-                temp_path = tempfile.mktemp(suffix=".xlsx")
-                await download.save_as(temp_path)
-            finally:
-                await browser.close()
-        excel = pd.ExcelFile(temp_path)
-        sheets = {}
-        for sheet in excel.sheet_names:
-            df = pd.read_excel(
-                temp_path,
-                sheet_name=sheet
-            )
-            sheets[sheet] = {
-                "rows": len(df),
-                "columns": list(df.columns),
-                "preview": df.head(10).to_dict(
-                    orient="records"
-                )
-            }
+        df = pd.read_csv(temp_path)
         return build_response(
             True,
-            "excel",
-            sheets
-        )
-    except Exception as e:
-        logger.exception(e)
-        return build_response(
-            False,
-            "excel",
-            None,
-            str(e)
+            "csv",
+            {
+                "rows": len(df),
+                "columns": list(df.columns),
+                "preview": df.head(10).to_dict(orient="records")
+            }
         )
     finally:
-        if temp_path and os.path.exists(temp_path):
+        if os.path.exists(temp_path):
             os.remove(temp_path)
 ##########################################################
 # DOCX Extraction
