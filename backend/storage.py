@@ -7,15 +7,22 @@ from urllib.parse import urlparse
 import boto3
 from botocore.config import Config
 
+def first_env(*names):
+    for name in names:
+        value = os.getenv(name)
+        if value and value.strip():
+            return value.strip()
+    return None
+
 def get_bucket_settings():
     return {
-        "bucket": os.getenv("BUCKET") or os.getenv("AWS_S3_BUCKET_NAME"),
-        "endpoint": os.getenv("ENDPOINT") or os.getenv("AWS_ENDPOINT_URL"),
-        "region": os.getenv("REGION") or os.getenv("AWS_DEFAULT_REGION") or "auto",
-        "access_key_id": os.getenv("ACCESS_KEY_ID") or os.getenv("AWS_ACCESS_KEY_ID"),
-        "secret_access_key": os.getenv("SECRET_ACCESS_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY"),
-        "url_style": (os.getenv("URL_STYLE") or os.getenv("AWS_S3_URL_STYLE") or "virtual").lower(),
-        "prefix": os.getenv("S3_PREFIX", "").strip("/"),
+        "bucket": first_env("BUCKET", "AWS_S3_BUCKET_NAME", "BUCKET_NAME"),
+        "endpoint": first_env("ENDPOINT", "AWS_ENDPOINT_URL", "BUCKET_ENDPOINT"),
+        "region": first_env("REGION", "AWS_DEFAULT_REGION", "BUCKET_REGION") or "auto",
+        "access_key_id": first_env("ACCESS_KEY_ID", "AWS_ACCESS_KEY_ID", "BUCKET_ACCESS_KEY_ID"),
+        "secret_access_key": first_env("SECRET_ACCESS_KEY", "AWS_SECRET_ACCESS_KEY", "BUCKET_SECRET_ACCESS_KEY"),
+        "url_style": (first_env("URL_STYLE", "AWS_S3_URL_STYLE", "BUCKET_URL_STYLE") or "virtual").lower(),
+        "prefix": (first_env("S3_PREFIX", "BUCKET_PREFIX") or "").strip("/"),
     }
 
 def is_bucket_configured():
@@ -26,6 +33,45 @@ def is_bucket_configured():
         settings["access_key_id"],
         settings["secret_access_key"],
     ])
+
+def get_bucket_config_status():
+    variable_groups = {
+        "bucket": ["BUCKET", "AWS_S3_BUCKET_NAME", "BUCKET_NAME"],
+        "endpoint": ["ENDPOINT", "AWS_ENDPOINT_URL", "BUCKET_ENDPOINT"],
+        "access_key_id": ["ACCESS_KEY_ID", "AWS_ACCESS_KEY_ID", "BUCKET_ACCESS_KEY_ID"],
+        "secret_access_key": ["SECRET_ACCESS_KEY", "AWS_SECRET_ACCESS_KEY", "BUCKET_SECRET_ACCESS_KEY"],
+    }
+    settings = get_bucket_settings()
+    missing = [
+        names
+        for key, names in variable_groups.items()
+        if not settings[key]
+    ]
+
+    return {
+        "configured": not missing,
+        "missing_any_of": missing,
+        "present": {
+            key: bool(value)
+            for key, value in settings.items()
+            if key != "secret_access_key"
+        },
+        "secret_access_key_present": bool(settings["secret_access_key"]),
+    }
+
+def bucket_not_configured_message(action: str):
+    status = get_bucket_config_status()
+    missing = status["missing_any_of"]
+    missing_text = ", ".join(
+        " or ".join(names)
+        for names in missing
+    ) or "none"
+
+    return (
+        f"Railway bucket is not configured for {action}. Missing: {missing_text}. "
+        "Add these variables to the app service that runs this code, not only to "
+        "the bucket service, then redeploy the app."
+    )
 
 def get_s3_client():
     settings = get_bucket_settings()
