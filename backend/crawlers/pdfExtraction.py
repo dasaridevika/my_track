@@ -6,11 +6,7 @@ import asyncio
 import tempfile
 import logging
 from pathlib import Path
-from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
-from crawl4ai.processors.pdf import (
-    PDFCrawlerStrategy,
-    PDFContentScrapingStrategy,
-)
+from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, BrowserConfig
 
 try:
     from storage import (
@@ -30,6 +26,7 @@ except ModuleNotFoundError:
     )
 
 logger = logging.getLogger(__name__)
+
 
 def upload_extracted_json(payload: dict, url: str, job_id: str):
     if not is_bucket_configured():
@@ -51,6 +48,7 @@ def upload_extracted_json(payload: dict, url: str, job_id: str):
     finally:
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
+
 
 def upload_extracted_images(image_dir: Path, url: str, job_id: str):
     uploaded_images = []
@@ -83,6 +81,7 @@ def upload_extracted_images(image_dir: Path, url: str, job_id: str):
 
     return uploaded_images
 
+
 def sanitize_image_metadata(images):
     sanitized = []
     local_path_keys = {"path", "local_path", "localPath", "file_path", "filePath"}
@@ -99,28 +98,34 @@ def sanitize_image_metadata(images):
 
     return sanitized
 
+
 async def pdf_extract(url: str):
     job_id = uuid.uuid4().hex
     image_dir = Path("pdf_images") / job_id
     image_dir.mkdir(parents=True, exist_ok=True)
-    pdf_scraper = PDFContentScrapingStrategy(
-        extract_images=True,
-        save_images_locally=True,
-        image_save_dir=str(image_dir),
-        batch_size=2,
+
+    # 1. Configure the headless browser to mimic a real user and avoid bot detection
+    browser_config = BrowserConfig(
+        headless=True,
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     )
+
+    # 2. Configure the run to wait for JS challenges to resolve before scraping
     run_config = CrawlerRunConfig(
-        scraping_strategy=pdf_scraper
+        delay_before_return_html=5.0,  # Crucial: Gives Cloudflare time to solve the JS challenge
+        page_timeout=60000,            # 60s timeout for the page to load
     )
+
     try:
-        async with AsyncWebCrawler(
-            crawler_strategy=PDFCrawlerStrategy()
-        ) as crawler:
+        # 3. FIX: Use the default browser-based AsyncWebCrawler (removes PDFCrawlerStrategy)
+        # The browser will execute JavaScript, solve the anti-bot challenge, and render the PDF
+        async with AsyncWebCrawler(config=browser_config) as crawler:
             async with asyncio.timeout(80):
                 result = await crawler.arun(
                     url=url,
                     config=run_config
                 )
+
     except asyncio.TimeoutError:
         shutil.rmtree(image_dir, ignore_errors=True)
         return {
@@ -143,6 +148,7 @@ async def pdf_extract(url: str):
             "error": result.error_message
         }
 
+    # Extract markdown/text content (the browser's built-in PDF viewer renders the text)
     markdown = (
         result.markdown.raw_markdown
         if hasattr(result.markdown, "raw_markdown")
@@ -171,13 +177,17 @@ async def pdf_extract(url: str):
         return response_payload
     finally:
         shutil.rmtree(image_dir, ignore_errors=True)
+
+
 # Optional: Run directly for testing
 if __name__ == "__main__":
     import asyncio
     import json
+    
     async def main():
         data = await pdf_extract(
-            "https://adk.elsevierpure.com/ws/portalfiles/portal/59225442/1_EDS_basics.pdf"
+            "https://shadowland.online/images/uploads/17fc6ef0-f7be-45ed-8c49-c0ed4115f5aa/EDS%20Packet.pdf"
         )
         print(json.dumps(data, indent=4, default=str))
+        
     asyncio.run(main())
