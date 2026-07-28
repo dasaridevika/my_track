@@ -41,6 +41,8 @@ PDF_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
+PDF_EXTRACTOR_VERSION = "direct-v3-range-browser"
+
 
 def upload_or_report(local_path: str, category: str, url: str, filename: str):
     if not is_bucket_configured():
@@ -84,6 +86,16 @@ async def download_pdf(url: str, destination: Path):
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             if e.response.status_code in {401, 403, 406, 429}:
+                range_result = await download_pdf_with_range_request(
+                    client,
+                    url,
+                    destination,
+                    headers,
+                    e.response.status_code,
+                )
+                if range_result:
+                    return range_result
+
                 logger.warning(
                     "Direct PDF download blocked with HTTP %s; trying browser fallback",
                     e.response.status_code,
@@ -108,6 +120,54 @@ async def download_pdf(url: str, destination: Path):
         "bytes": len(content),
         "final_url": str(response.url),
         "download_method": "httpx",
+    }
+
+
+async def download_pdf_with_range_request(
+    client: httpx.AsyncClient,
+    url: str,
+    destination: Path,
+    headers: dict,
+    blocked_status: int,
+):
+    range_headers = {
+        **headers,
+        "Range": "bytes=0-",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+    }
+
+    try:
+        response = await client.get(url, headers=range_headers)
+        response.raise_for_status()
+    except Exception as range_error:
+        logger.warning(
+            "Range PDF retry failed after HTTP %s block: %s",
+            blocked_status,
+            range_error,
+        )
+        return None
+
+    content = response.content
+    content_type = response.headers.get("content-type", "").lower()
+
+    if not content.lstrip().startswith(b"%PDF"):
+        preview = content[:200].decode("utf-8", errors="replace")
+        logger.warning(
+            "Range PDF retry returned non-PDF content_type=%s bytes=%s preview=%r",
+            content_type or "unknown",
+            len(content),
+            preview,
+        )
+        return None
+
+    destination.write_bytes(content)
+    return {
+        "content_type": content_type or "application/pdf",
+        "bytes": len(content),
+        "final_url": str(response.url),
+        "download_method": "httpx-range",
+        "recovered_from_status": blocked_status,
     }
 
 
@@ -235,6 +295,7 @@ async def pdf_extract(url: str):
             "success": True,
             "url": url,
             "job_id": job_id,
+            "extractor_version": PDF_EXTRACTOR_VERSION,
             "download": download_info,
             "page_count": extracted["page_count"],
             "markdown": extracted["markdown"],
@@ -288,7 +349,11 @@ async def pdf_extract(url: str):
         return {
             "success": False,
             "url": url,
-            "error": f"PDF download failed with HTTP {e.response.status_code}.",
+            "extractor_version": PDF_EXTRACTOR_VERSION,
+            "error": (
+                f"PDF download failed with HTTP {e.response.status_code}. "
+                "The range/browser fallback code did not recover this response."
+            ),
             "storage_config": get_bucket_config_status(),
         }
     except Exception as e:
@@ -296,6 +361,7 @@ async def pdf_extract(url: str):
         return {
             "success": False,
             "url": url,
+            "extractor_version": PDF_EXTRACTOR_VERSION,
             "error": str(e),
             "storage_config": get_bucket_config_status(),
         }
