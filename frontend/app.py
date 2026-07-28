@@ -91,26 +91,42 @@ if st.button(" Start Crawling", use_container_width=True):
                     st.write(f"**URL:** {extracted.get('url')}")
                     st.write(f"**Success:** {extracted.get('success')}")
                     st.write(f"**Job ID:** {extracted.get('job_id', 'N/A')}")
+                    if not extracted.get("success", False):
+                        st.error(extracted.get("message", "Snapshot failed."))
+                    elif extracted.get("errors"):
+                        st.warning("Snapshot completed with partial artifact failures.")
+                    if extracted.get("errors"):
+                        with st.expander("Snapshot Errors"):
+                            st.json(extracted["errors"])
                     if "screenshot" in files:
                         shot = files["screenshot"]
-                        st.success("Screenshot generated")
-                        if shot.get("url"):
+                        if shot.get("upload_error"):
+                            st.error(f"Screenshot upload failed: {shot['upload_error']}")
+                        elif shot.get("url"):
+                            st.success("Screenshot generated")
                             st.markdown(f"[Open Screenshot]({shot['url']})")
                         elif shot.get("local_path"):
+                            st.success("Screenshot generated")
                             st.info(f"Saved locally: {shot['local_path']}")
                     if "pdf" in files:
                         pdf = files["pdf"]
-                        st.success("PDF generated")
-                        if pdf.get("url"):
+                        if pdf.get("upload_error"):
+                            st.error(f"PDF upload failed: {pdf['upload_error']}")
+                        elif pdf.get("url"):
+                            st.success("PDF generated")
                             st.markdown(f"[Open PDF]({pdf['url']})")
                         elif pdf.get("local_path"):
+                            st.success("PDF generated")
                             st.info(f"Saved locally: {pdf['local_path']}")
                     if "mhtml" in files:
                         mhtml = files["mhtml"]
-                        st.success("MHTML generated")
-                        if mhtml.get("url"):
+                        if mhtml.get("upload_error"):
+                            st.error(f"MHTML upload failed: {mhtml['upload_error']}")
+                        elif mhtml.get("url"):
+                            st.success("MHTML generated")
                             st.markdown(f"[Download MHTML]({mhtml['url']})")
                         elif mhtml.get("local_path"):
+                            st.success("MHTML generated")
                             st.info(f"Saved locally: {mhtml['local_path']}")
                     with st.expander("Snapshot Response"):
                         st.json(extracted)
