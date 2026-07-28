@@ -13,13 +13,33 @@ from crawl4ai.processors.pdf import (
 )
 
 try:
-    from storage import is_bucket_configured, make_object_key, upload_file
+    from storage import (
+        bucket_not_configured_message,
+        get_bucket_config_status,
+        is_bucket_configured,
+        make_object_key,
+        upload_file,
+    )
 except ModuleNotFoundError:
-    from backend.storage import is_bucket_configured, make_object_key, upload_file
+    from backend.storage import (
+        bucket_not_configured_message,
+        get_bucket_config_status,
+        is_bucket_configured,
+        make_object_key,
+        upload_file,
+    )
 
 logger = logging.getLogger(__name__)
 
 def upload_extracted_json(payload: dict, url: str, job_id: str):
+    if not is_bucket_configured():
+        return {
+            "filename": "extraction.json",
+            "storage": "bucket",
+            "upload_error": bucket_not_configured_message("uploading PDF extraction JSON"),
+            "storage_config": get_bucket_config_status(),
+        }
+
     temp_path = None
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".json", mode="w", encoding="utf-8") as temp_file:
@@ -41,6 +61,15 @@ def upload_extracted_images(image_dir: Path, url: str, job_id: str):
     for image_path in sorted(path for path in image_dir.rglob("*") if path.is_file()):
         object_key = make_object_key(f"pdf-extractions/{job_id}/images", url, image_path.name)
         try:
+            if not is_bucket_configured():
+                uploaded_images.append({
+                    "filename": image_path.name,
+                    "storage": "bucket",
+                    "upload_error": bucket_not_configured_message("uploading PDF images"),
+                    "storage_config": get_bucket_config_status(),
+                })
+                continue
+
             file_data = upload_file(str(image_path), object_key)
             file_data["source_filename"] = image_path.name
             uploaded_images.append(file_data)
@@ -71,16 +100,6 @@ def sanitize_image_metadata(images):
     return sanitized
 
 async def pdf_extract(url: str):
-    if not is_bucket_configured():
-        return {
-            "success": False,
-            "url": url,
-            "error": (
-                "Railway bucket is not configured. Set BUCKET, ENDPOINT, "
-                "ACCESS_KEY_ID, and SECRET_ACCESS_KEY before extracting PDF assets."
-            ),
-        }
-
     job_id = uuid.uuid4().hex
     image_dir = Path("pdf_images") / job_id
     image_dir.mkdir(parents=True, exist_ok=True)
@@ -138,6 +157,7 @@ async def pdf_extract(url: str):
         "markdown": markdown,
         "images": sanitize_image_metadata(result.media.get("images", [])),
         "image_count": len(result.media.get("images", [])),
+        "storage_config": get_bucket_config_status(),
     }
 
     try:
