@@ -251,3 +251,6 @@ async def crawl(request: CrawlRequest):
     except Exception as e:
         logger.exception("Unhandled Exception")
         raise HTTPException(status_code=500, detail=str(e))
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
