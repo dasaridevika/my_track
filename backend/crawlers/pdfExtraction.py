@@ -1,14 +1,15 @@
-import os
-import uuid
-import json
-import shutil
 import asyncio
-import tempfile
+import json
 import logging
+import os
+import shutil
+import tempfile
+import uuid
 from pathlib import Path
 from urllib.parse import urlparse
-from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, BrowserConfig
-from crawl4ai.processors.pdf import PDFContentScrapingStrategy
+
+import fitz
+import httpx
 
 try:
     from storage import (
@@ -29,272 +30,211 @@ except ModuleNotFoundError:
 
 logger = logging.getLogger(__name__)
 
+PDF_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/126.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/pdf,application/octet-stream;q=0.9,*/*;q=0.8",
+}
 
-def upload_extracted_json(payload: dict, url: str, job_id: str):
+
+def upload_or_report(local_path: str, category: str, url: str, filename: str):
     if not is_bucket_configured():
         return {
-            "filename": "extraction.json",
+            "filename": filename,
             "storage": "bucket",
-            "upload_error": bucket_not_configured_message("uploading PDF extraction JSON"),
+            "upload_error": bucket_not_configured_message(f"uploading {filename}"),
             "storage_config": get_bucket_config_status(),
         }
 
-    temp_path = None
+    object_key = make_object_key(category, url, filename)
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".json", mode="w", encoding="utf-8") as temp_file:
-            json.dump(payload, temp_file, ensure_ascii=False, indent=2, default=str)
-            temp_path = temp_file.name
+        return upload_file(local_path, object_key)
+    except Exception as upload_error:
+        logger.exception("Could not upload PDF artifact")
+        return {
+            "filename": filename,
+            "key": object_key,
+            "storage": "bucket",
+            "upload_error": str(upload_error),
+        }
 
-        object_key = make_object_key(f"pdf-extractions/{job_id}", url, "extraction.json")
-        return upload_file(temp_path, object_key)
-    finally:
-        if temp_path and os.path.exists(temp_path):
-            os.remove(temp_path)
+
+def write_json_temp(payload: dict):
+    temp_path = None
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".json", mode="w", encoding="utf-8") as temp_file:
+        json.dump(payload, temp_file, ensure_ascii=False, indent=2, default=str)
+        temp_path = temp_file.name
+    return temp_path
 
 
-def upload_extracted_images(image_dir: Path, url: str, job_id: str):
-    uploaded_images = []
+async def download_pdf(url: str, destination: Path):
+    parsed = urlparse(url)
+    headers = dict(PDF_HEADERS)
+    if parsed.scheme and parsed.netloc:
+        headers["Referer"] = f"{parsed.scheme}://{parsed.netloc}/"
 
-    if not image_dir.exists():
-        return uploaded_images
+    async with httpx.AsyncClient(follow_redirects=True, timeout=120.0, headers=headers) as client:
+        response = await client.get(url)
+        response.raise_for_status()
 
-    for image_path in sorted(path for path in image_dir.rglob("*") if path.is_file()):
-        object_key = make_object_key(f"pdf-extractions/{job_id}/images", url, image_path.name)
-        try:
-            if not is_bucket_configured():
-                uploaded_images.append({
-                    "filename": image_path.name,
-                    "storage": "bucket",
-                    "upload_error": bucket_not_configured_message("uploading PDF images"),
-                    "storage_config": get_bucket_config_status(),
+    content_type = response.headers.get("content-type", "").lower()
+    content = response.content
+    is_pdf = content.startswith(b"%PDF")
+
+    if not is_pdf:
+        preview = content[:200].decode("utf-8", errors="replace")
+        raise ValueError(
+            "URL did not return a valid PDF. "
+            f"content_type={content_type or 'unknown'}, bytes={len(content)}, preview={preview!r}"
+        )
+
+    destination.write_bytes(content)
+    return {
+        "content_type": content_type or "application/pdf",
+        "bytes": len(content),
+        "final_url": str(response.url),
+    }
+
+
+def extract_pdf_content(pdf_path: Path, image_dir: Path):
+    pages = []
+    images = []
+    markdown_parts = []
+
+    document = fitz.open(pdf_path)
+    try:
+        for page_index, page in enumerate(document):
+            page_number = page_index + 1
+            text = page.get_text("text").strip()
+            pages.append({
+                "page": page_number,
+                "text": text,
+            })
+
+            if text:
+                markdown_parts.append(f"## Page {page_number}\n\n{text}")
+
+            for image_index, image_info in enumerate(page.get_images(full=True), start=1):
+                xref = image_info[0]
+                extracted = document.extract_image(xref)
+                image_bytes = extracted.get("image")
+                extension = extracted.get("ext", "png")
+
+                if not image_bytes:
+                    continue
+
+                image_name = f"page-{page_number}-image-{image_index}.{extension}"
+                image_path = image_dir / image_name
+                image_path.write_bytes(image_bytes)
+                images.append({
+                    "page": page_number,
+                    "filename": image_name,
+                    "extension": extension,
+                    "bytes": len(image_bytes),
                 })
-                continue
+    finally:
+        document.close()
 
-            file_data = upload_file(str(image_path), object_key)
-            file_data["source_filename"] = image_path.name
-            uploaded_images.append(file_data)
-        except Exception as upload_error:
-            logger.exception("Could not upload extracted PDF image")
-            uploaded_images.append({
-                "filename": image_path.name,
-                "storage": "bucket",
-                "upload_error": str(upload_error),
-            })
-
-    return uploaded_images
-
-
-def sanitize_image_metadata(images):
-    sanitized = []
-    local_path_keys = {"path", "local_path", "localPath", "file_path", "filePath"}
-
-    for image in images or []:
-        if isinstance(image, dict):
-            sanitized.append({
-                key: value
-                for key, value in image.items()
-                if key not in local_path_keys
-            })
-        else:
-            sanitized.append(image)
-
-    return sanitized
+    return {
+        "page_count": len(pages),
+        "pages": pages,
+        "markdown": "\n\n".join(markdown_parts),
+        "images": images,
+        "image_count": len(images),
+    }
 
 
 async def pdf_extract(url: str):
     job_id = uuid.uuid4().hex
-    image_dir = Path("pdf_images") / job_id
+    work_dir = Path(tempfile.mkdtemp(prefix=f"pdf-extract-{job_id}-"))
+    image_dir = work_dir / "images"
     image_dir.mkdir(parents=True, exist_ok=True)
+    pdf_path = work_dir / "source.pdf"
 
-    browser_config = BrowserConfig(
-        headless=True,
-        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    )
-
-    run_config = CrawlerRunConfig(
-        delay_before_return_html=5.0,
-        page_timeout=60000,
-    )
-
-    # -----------------------------------------------------------------
-    # STEP 1: Use Crawl4AI's browser to solve the Cloudflare challenge
-    # -----------------------------------------------------------------
-    pdf_bytes = None
     try:
-        async with AsyncWebCrawler(config=browser_config) as crawler:
-            async with asyncio.timeout(80):
-                # 1. Navigate to the base domain to solve the JS challenge
-                base_url = f"{urlparse(url).scheme}://{urlparse(url).netloc}"
-                await crawler.arun(url=base_url, config=run_config)
+        download_info = await download_pdf(url, pdf_path)
+        extracted = await asyncio.to_thread(extract_pdf_content, pdf_path, image_dir)
 
-                # 2. Use Crawl4AI's internal Playwright page to download the PDF directly
-                # This bypasses the ERR_ABORTED crash and bypasses the 33-byte block page
-                page = crawler.browser_manager.page
-                response = await page.goto(url, wait_until="commit", timeout=60000)
-
-                if response and response.ok:
-                    body = await response.body()
-                    if body and len(body) > 100 and body[:4] == b'%PDF':
-                        pdf_bytes = body
-                        logger.info(f"Successfully downloaded PDF via Crawl4AI browser ({len(pdf_bytes)} bytes)")
-                    else:
-                        logger.warning(f"Anti-bot block page received instead of PDF ({len(body)} bytes)")
-                else:
-                    logger.warning(f"Failed to download PDF via Crawl4AI browser: HTTP {response.status if response else 'No response'}")
-
-    except asyncio.TimeoutError:
-        shutil.rmtree(image_dir, ignore_errors=True)
-        return {
-            "success": False,
-            "error": "Browser timeout while trying to bypass anti-bot protection."
+        response_payload = {
+            "success": True,
+            "url": url,
+            "job_id": job_id,
+            "download": download_info,
+            "page_count": extracted["page_count"],
+            "markdown": extracted["markdown"],
+            "pages": extracted["pages"],
+            "images": extracted["images"],
+            "image_count": extracted["image_count"],
+            "storage_config": get_bucket_config_status(),
         }
-    except Exception as e:
-        logger.warning(f"Crawl4AI browser context download failed: {str(e)}")
 
-    # -----------------------------------------------------------------
-    # STEP 2: Parse the PDF bytes using Crawl4AI's PDFContentScrapingStrategy
-    # -----------------------------------------------------------------
-    if pdf_bytes:
-        temp_pdf_path = None
+        uploaded_images = []
+        for image in extracted["images"]:
+            image_path = image_dir / image["filename"]
+            file_data = upload_or_report(
+                str(image_path),
+                f"pdf-extractions/{job_id}/images",
+                url,
+                image["filename"],
+            )
+            file_data["page"] = image["page"]
+            uploaded_images.append(file_data)
+
+        extraction_json_path = write_json_temp(response_payload)
         try:
-            # Save the PDF bytes to a temporary file for the scraper
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
-                temp_pdf.write(pdf_bytes)
-                temp_pdf_path = temp_pdf.name
-
-            pdf_scraper = PDFContentScrapingStrategy(
-                extract_images=True,
-                save_images_locally=True,
-                image_save_dir=str(image_dir),
-                batch_size=2,
+            extraction_file = upload_or_report(
+                extraction_json_path,
+                f"pdf-extractions/{job_id}",
+                url,
+                "extraction.json",
             )
-
-            # Run the Crawl4AI scraper directly on the local PDF file
-            parsed_result = await pdf_scraper.scrap(
-                url=temp_pdf_path, 
-                html="",          
-                raw_html=b"",     
-            )
-
-            markdown = parsed_result.get("markdown", "") if isinstance(parsed_result, dict) else str(parsed_result)
-
-            response_payload = {
-                "success": True,
-                "url": url,
-                "job_id": job_id,
-                "metadata": {},
-                "markdown": markdown,
-                "images": sanitize_image_metadata(parsed_result.get("images", [])) if isinstance(parsed_result, dict) else [],
-                "image_count": len(parsed_result.get("images", [])) if isinstance(parsed_result, dict) else 0,
-                "storage_config": get_bucket_config_status(),
-            }
-
-            try:
-                uploaded_images = upload_extracted_images(image_dir, url, job_id)
-                extracted_json = upload_extracted_json(response_payload, url, job_id)
-                response_payload["storage_mode"] = "bucket"
-                response_payload["files"] = {
-                    "extraction": extracted_json,
-                    "images": uploaded_images,
-                }
-                return response_payload
-            finally:
-                shutil.rmtree(image_dir, ignore_errors=True)
-
-        except Exception as e:
-            shutil.rmtree(image_dir, ignore_errors=True)
-            logger.exception("Local PDF parsing failed")
-            return {
-                "success": False,
-                "url": url,
-                "error": str(e),
-            }
         finally:
-            if temp_pdf_path and os.path.exists(temp_pdf_path):
-                os.remove(temp_pdf_path)
+            if os.path.exists(extraction_json_path):
+                os.remove(extraction_json_path)
 
-    # -----------------------------------------------------------------
-    # STEP 3: Fallback (if the site wasn't actually protected)
-    # -----------------------------------------------------------------
-    from crawl4ai.processors.pdf import PDFCrawlerStrategy
-    
-    pdf_scraper = PDFContentScrapingStrategy(
-        extract_images=True,
-        save_images_locally=True,
-        image_save_dir=str(image_dir),
-        batch_size=2,
-    )
+        source_file = upload_or_report(
+            str(pdf_path),
+            f"pdf-extractions/{job_id}",
+            url,
+            "source.pdf",
+        )
 
-    run_config_pdf = CrawlerRunConfig(
-        scraping_strategy=pdf_scraper,
-        page_timeout=60000,
-    )
+        response_payload["storage_mode"] = "bucket" if is_bucket_configured() else "bucket_unconfigured"
+        response_payload["files"] = {
+            "source_pdf": source_file,
+            "extraction": extraction_file,
+            "images": uploaded_images,
+        }
+        return response_payload
 
-    try:
-        async with AsyncWebCrawler(crawler_strategy=PDFCrawlerStrategy()) as crawler:
-            async with asyncio.timeout(80):
-                result = await crawler.arun(url=url, config=run_config_pdf)
-    except asyncio.TimeoutError:
-        shutil.rmtree(image_dir, ignore_errors=True)
+    except httpx.HTTPStatusError as e:
+        logger.exception("PDF download failed")
         return {
             "success": False,
-            "error": "PDF Crawler request timed out after 80 seconds."
+            "url": url,
+            "error": f"PDF download failed with HTTP {e.response.status_code}.",
+            "storage_config": get_bucket_config_status(),
         }
     except Exception as e:
-        shutil.rmtree(image_dir, ignore_errors=True)
         logger.exception("PDF extraction failed")
         return {
             "success": False,
             "url": url,
             "error": str(e),
+            "storage_config": get_bucket_config_status(),
         }
-
-    if not result.success:
-        shutil.rmtree(image_dir, ignore_errors=True)
-        return {
-            "success": False,
-            "error": result.error_message
-        }
-
-    markdown = (
-        result.markdown.raw_markdown
-        if hasattr(result.markdown, "raw_markdown")
-        else result.markdown
-    )
-
-    response_payload = {
-        "success": True,
-        "url": url,
-        "job_id": job_id,
-        "metadata": result.metadata,
-        "markdown": markdown,
-        "images": sanitize_image_metadata(result.media.get("images", [])),
-        "image_count": len(result.media.get("images", [])),
-        "storage_config": get_bucket_config_status(),
-    }
-
-    try:
-        uploaded_images = upload_extracted_images(image_dir, url, job_id)
-        extracted_json = upload_extracted_json(response_payload, url, job_id)
-        response_payload["storage_mode"] = "bucket"
-        response_payload["files"] = {
-            "extraction": extracted_json,
-            "images": uploaded_images,
-        }
-        return response_payload
     finally:
-        shutil.rmtree(image_dir, ignore_errors=True)
+        shutil.rmtree(work_dir, ignore_errors=True)
 
 
-# Optional: Run directly for testing
 if __name__ == "__main__":
-    import asyncio
-    import json
-    
     async def main():
         data = await pdf_extract(
-            "https://shadowland.online/images/uploads/17fc6ef0-f7be-45ed-8c49-c0ed4115f5aa/EDS%20Packet.pdf"
+            "https://adk.elsevierpure.com/ws/portalfiles/portal/59225442/1_EDS_basics.pdf"
         )
         print(json.dumps(data, indent=4, default=str))
-        
+
     asyncio.run(main())
