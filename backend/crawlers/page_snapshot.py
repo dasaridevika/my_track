@@ -27,9 +27,9 @@ async def page_snapshot(url: str):
         capture_mhtml=True,
     )
     try:
-    async with AsyncWebCrawler(config=browser_config) as crawler:
-        async with asyncio.timeout(80):
-            result = await crawler.arun(
+        async with AsyncWebCrawler(config=browser_config) as crawler:
+            async with asyncio.timeout(80):
+                result = await crawler.arun(
                 url=url,
                 config=crawler_config
             )
