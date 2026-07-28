@@ -11,6 +11,9 @@ import logging
 from contextlib import asynccontextmanager, suppress
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 try:
     from crawlers.page_snapshot import page_snapshot
     from crawlers.deep_crawling_dynamic_pages import deep_crawl_bfs
