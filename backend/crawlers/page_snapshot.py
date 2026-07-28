@@ -11,9 +11,21 @@ from crawl4ai import (
     CacheMode,
 )
 try:
-    from storage import is_bucket_configured, make_object_key, upload_file
+    from storage import (
+        bucket_not_configured_message,
+        get_bucket_config_status,
+        is_bucket_configured,
+        make_object_key,
+        upload_file,
+    )
 except ModuleNotFoundError:
-    from backend.storage import is_bucket_configured, make_object_key, upload_file
+    from backend.storage import (
+        bucket_not_configured_message,
+        get_bucket_config_status,
+        is_bucket_configured,
+        make_object_key,
+        upload_file,
+    )
 logger = logging.getLogger(__name__)
 
 SNAPSHOT_TIMEOUT_SECONDS = 80
@@ -38,17 +50,6 @@ async def run_snapshot_capture(url: str, **capture_flags):
             )
 
 async def page_snapshot(url: str):
-    if not is_bucket_configured():
-        return {
-            "success": False,
-            "method": "snapshot",
-            "url": url,
-            "message": (
-                "Railway bucket is not configured. Set BUCKET, ENDPOINT, "
-                "ACCESS_KEY_ID, and SECRET_ACCESS_KEY before generating snapshots."
-            ),
-        }
-
     job_id = str(uuid.uuid4())
     output_dir = os.path.join("outputs", job_id)
     os.makedirs(output_dir, exist_ok=True)
@@ -80,6 +81,15 @@ async def page_snapshot(url: str):
         bucket_key = make_object_key(f"page-snapshots/{job_id}", url, filename)
 
         try:
+            if not is_bucket_configured():
+                return {
+                    "filename": filename,
+                    "type": file_type,
+                    "storage": "bucket",
+                    "upload_error": bucket_not_configured_message(f"uploading {file_type}"),
+                    "storage_config": get_bucket_config_status(),
+                }
+
             file_data = upload_file(local_path, bucket_key)
             file_data["type"] = file_type
             return file_data
@@ -161,7 +171,8 @@ async def page_snapshot(url: str):
         "method": "snapshot",
         "url": url,
         "job_id": job_id,
-        "storage_mode": "bucket" if is_bucket_configured() else "local",
+        "storage_mode": "bucket" if is_bucket_configured() else "bucket_unconfigured",
         "files": uploaded_files,
         "errors": capture_errors,
+        "storage_config": get_bucket_config_status(),
     }
