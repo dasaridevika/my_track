@@ -43,29 +43,28 @@ SUPPORTED_TYPES = {
     ".json": "json",
     ".xml": "xml",
 }
-S3_BUCKET_NAME = os.getenv("AWS_S3_BUCKET_NAME") or os.getenv("BUCKET")
+S3_BUCKET_NAME = os.getenv("BUCKET")
+S3_ENDPOINT_URL = os.getenv("ENDPOINT")
+S3_ACCESS_KEY_ID = os.getenv("ACCESS_KEY_ID")
+S3_SECRET_ACCESS_KEY = os.getenv("SECRET_ACCESS_KEY")
+S3_REGION = os.getenv("REGION", "auto")
+S3_URL_STYLE = os.getenv("URL_STYLE", "virtual").lower()
 S3_PREFIX = os.getenv("S3_PREFIX", "deep-crawl/")
-AWS_ENDPOINT_URL = os.getenv("AWS_ENDPOINT_URL") or os.getenv("ENDPOINT")
-AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("ACCESS_KEY_ID")
-AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY") or os.getenv("SECRET_ACCESS_KEY")
-AWS_REGION = os.getenv("AWS_DEFAULT_REGION") or os.getenv("REGION") or "auto"
-AWS_S3_URL_STYLE = (os.getenv("AWS_S3_URL_STYLE") or "virtual").lower()
+
 if not S3_BUCKET_NAME:
-    raise ValueError("Missing Railway bucket name. Set AWS_S3_BUCKET_NAME or BUCKET.")
-if not AWS_ENDPOINT_URL:
-    raise ValueError("Missing Railway bucket endpoint. Set AWS_ENDPOINT_URL or ENDPOINT.")
-if not AWS_ACCESS_KEY_ID or not AWS_SECRET_ACCESS_KEY:
-    raise ValueError("Missing Railway bucket credentials.")
+    raise ValueError("Missing Railway BUCKET env var.")
+if not S3_ENDPOINT_URL:
+    raise ValueError("Missing Railway ENDPOINT env var.")
+if not S3_ACCESS_KEY_ID or not S3_SECRET_ACCESS_KEY:
+    raise ValueError("Missing Railway access credentials.")
 s3 = boto3.client(
     "s3",
-    endpoint_url=AWS_ENDPOINT_URL,
-    aws_access_key_id=AWS_ACCESS_KEY_ID,
-    aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-    region_name=AWS_REGION,
+    endpoint_url=S3_ENDPOINT_URL,
+    aws_access_key_id=S3_ACCESS_KEY_ID,
+    aws_secret_access_key=S3_SECRET_ACCESS_KEY,
+    region_name=S3_REGION,
     config=Config(
-        s3={
-            "addressing_style": "virtual" if AWS_S3_URL_STYLE == "virtual" else "path"
-        }
+        s3={"addressing_style": "virtual" if S3_URL_STYLE == "virtual" else "path"}
     ),
 )
 def validate_url(url: str):
