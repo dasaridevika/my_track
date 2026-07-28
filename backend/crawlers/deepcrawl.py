@@ -120,7 +120,7 @@ def guess_content_type(file_path: str, fallback="application/octet-stream"):
 
 
 def make_s3_key(file_type: str, original_url: str, suffix: str):
-    _, _, prefix = get_s3_client_and_bucket()
+    prefix = get_bucket_settings()["prefix"]
     parsed = urlparse(original_url)
     domain = parsed.netloc.replace(":", "_")
     file_id = uuid.uuid4().hex
@@ -161,6 +161,20 @@ def upload_json_to_s3(data: dict, s3_key: str):
     finally:
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
+
+
+def maybe_upload_file(local_path: str, file_type: str, url: str, suffix: str, content_type: str):
+    if not is_bucket_configured():
+        return None
+    s3_key = make_s3_key(file_type, url, suffix)
+    return upload_file_to_s3(local_path, s3_key, content_type)
+
+
+def maybe_upload_json(data: dict, file_type: str, url: str, suffix: str):
+    if not is_bucket_configured():
+        return None
+    s3_key = make_s3_key(file_type, url, suffix)
+    return upload_json_to_s3(data, s3_key)
 
 
 async def detect_file_type(url: str):
@@ -212,8 +226,7 @@ async def download_file(url: str, suffix: str):
 async def extract_json(url: str):
     temp_path = await download_file(url, ".json")
     try:
-        s3_key = make_s3_key("json", url, ".json")
-        s3_info = upload_file_to_s3(temp_path, s3_key, "application/json")
+        s3_info = maybe_upload_file(temp_path, "json", url, ".json", "application/json")
 
         with open(temp_path, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -234,8 +247,7 @@ async def extract_json(url: str):
 async def extract_xml(url: str):
     temp_path = await download_file(url, ".xml")
     try:
-        s3_key = make_s3_key("xml", url, ".xml")
-        s3_info = upload_file_to_s3(temp_path, s3_key, "application/xml")
+        s3_info = maybe_upload_file(temp_path, "xml", url, ".xml", "application/xml")
 
         tree = etree.parse(temp_path)
         root = tree.getroot()
@@ -257,8 +269,7 @@ async def extract_pdf(url: str):
     logger.info(f"Extracting PDF: {url}")
     temp_path = await download_file(url, ".pdf")
     try:
-        s3_key = make_s3_key("pdf", url, ".pdf")
-        s3_info = upload_file_to_s3(temp_path, s3_key, "application/pdf")
+        s3_info = maybe_upload_file(temp_path, "pdf", url, ".pdf", "application/pdf")
 
         document = fitz.open(temp_path)
         pages = []
@@ -296,10 +307,11 @@ async def extract_excel(url: str):
     logger.info(f"Extracting Excel: {url}")
     temp_path = await download_file(url, ".xlsx")
     try:
-        s3_key = make_s3_key("excel", url, ".xlsx")
-        s3_info = upload_file_to_s3(
+        s3_info = maybe_upload_file(
             temp_path,
-            s3_key,
+            "excel",
+            url,
+            ".xlsx",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
@@ -333,8 +345,7 @@ async def extract_excel(url: str):
 async def extract_csv(url: str):
     temp_path = await download_file(url, ".csv")
     try:
-        s3_key = make_s3_key("csv", url, ".csv")
-        s3_info = upload_file_to_s3(temp_path, s3_key, "text/csv")
+        s3_info = maybe_upload_file(temp_path, "csv", url, ".csv", "text/csv")
 
         df = pd.read_csv(temp_path)
 
@@ -356,10 +367,11 @@ async def extract_csv(url: str):
 async def extract_docx(url: str):
     temp_path = await download_file(url, ".docx")
     try:
-        s3_key = make_s3_key("docx", url, ".docx")
-        s3_info = upload_file_to_s3(
+        s3_info = maybe_upload_file(
             temp_path,
-            s3_key,
+            "docx",
+            url,
+            ".docx",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
 
@@ -382,10 +394,11 @@ async def extract_docx(url: str):
 async def extract_pptx(url: str):
     temp_path = await download_file(url, ".pptx")
     try:
-        s3_key = make_s3_key("pptx", url, ".pptx")
-        s3_info = upload_file_to_s3(
+        s3_info = maybe_upload_file(
             temp_path,
-            s3_key,
+            "pptx",
+            url,
+            ".pptx",
             "application/vnd.openxmlformats-officedocument.presentationml.presentation"
         )
 
@@ -418,8 +431,7 @@ async def extract_pptx(url: str):
 async def extract_txt(url: str):
     temp_path = await download_file(url, ".txt")
     try:
-        s3_key = make_s3_key("txt", url, ".txt")
-        s3_info = upload_file_to_s3(temp_path, s3_key, "text/plain")
+        s3_info = maybe_upload_file(temp_path, "txt", url, ".txt", "text/plain")
 
         with open(temp_path, "r", encoding="utf-8", errors="ignore") as file:
             text = file.read()
@@ -476,10 +488,7 @@ async def extract_webpage(url: str):
             "media": getattr(result, "media", {})
         }
 
-        s3_info = None
-        if is_bucket_configured():
-            s3_key = make_s3_key("html", url, ".json")
-            s3_info = upload_json_to_s3(output, s3_key)
+        s3_info = maybe_upload_json(output, "html", url, ".json")
 
         return build_response(
             True,
