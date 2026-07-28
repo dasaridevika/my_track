@@ -11,11 +11,22 @@ from crawl4ai import (
     CacheMode,
 )
 try:
-    from storage import is_bucket_configured, upload_file, get_download_url
+    from storage import is_bucket_configured, make_object_key, upload_file
 except ModuleNotFoundError:
-    from backend.storage import is_bucket_configured, upload_file, get_download_url
+    from backend.storage import is_bucket_configured, make_object_key, upload_file
 logger = logging.getLogger(__name__)
 async def page_snapshot(url: str):
+    if not is_bucket_configured():
+        return {
+            "success": False,
+            "method": "snapshot",
+            "url": url,
+            "message": (
+                "Railway bucket is not configured. Set BUCKET, ENDPOINT, "
+                "ACCESS_KEY_ID, and SECRET_ACCESS_KEY before generating snapshots."
+            ),
+        }
+
     job_id = str(uuid.uuid4())
     output_dir = os.path.join("outputs", job_id)
     os.makedirs(output_dir, exist_ok=True)
@@ -67,41 +78,29 @@ async def page_snapshot(url: str):
 
     uploaded_files = {}
 
-    def handle_file(file_type: str, local_path: str, bucket_key: str):
+    def handle_file(file_type: str, local_path: str):
         filename = os.path.basename(local_path)
+        bucket_key = make_object_key(f"page-snapshots/{job_id}", url, filename)
 
         try:
-            if is_bucket_configured():
-                upload_file(local_path, bucket_key)
-
-                file_data = {
-                    "filename": filename,
-                    "key": bucket_key,
-                    "url": get_download_url(bucket_key, filename=filename),
-                    "storage": "bucket",
-                }
-
-                try:
-                    os.remove(local_path)
-                except Exception as cleanup_error:
-                    logger.warning(f"Could not delete {local_path}: {cleanup_error}")
-
-                return file_data
-
-            return {
-                "filename": filename,
-                "local_path": local_path,
-                "storage": "local",
-            }
+            file_data = upload_file(local_path, bucket_key)
+            file_data["type"] = file_type
+            return file_data
 
         except Exception as upload_error:
             logger.exception(upload_error)
             return {
                 "filename": filename,
-                "local_path": local_path,
-                "storage": "local",
+                "storage": "bucket",
                 "upload_error": str(upload_error),
             }
+        finally:
+            try:
+                os.remove(local_path)
+            except FileNotFoundError:
+                pass
+            except Exception as cleanup_error:
+                logger.warning(f"Could not delete {local_path}: {cleanup_error}")
 
     if result.screenshot:
         screenshot_path = os.path.join(output_dir, "screenshot.png")
@@ -111,7 +110,6 @@ async def page_snapshot(url: str):
         uploaded_files["screenshot"] = handle_file(
             "screenshot",
             screenshot_path,
-            f"pagesnapshots/{job_id}/screenshot.png",
         )
 
     if result.pdf:
@@ -122,7 +120,6 @@ async def page_snapshot(url: str):
         uploaded_files["pdf"] = handle_file(
             "pdf",
             pdf_path,
-            f"pagesnapshots/{job_id}/page.pdf",
         )
 
     if result.mhtml:
@@ -133,7 +130,6 @@ async def page_snapshot(url: str):
         uploaded_files["mhtml"] = handle_file(
             "mhtml",
             mhtml_path,
-            f"pagesnapshots/{job_id}/page.mhtml",
         )
 
     if os.path.isdir(output_dir) and not os.listdir(output_dir):
