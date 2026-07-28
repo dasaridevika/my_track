@@ -8,7 +8,7 @@ RUN playwright install chromium
 
 COPY . .
 
-ENV PORT=8000
-EXPOSE 8000
+ENV PORT=8501
+EXPOSE 8501
 
-CMD ["sh", "-c", "cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT"]
+CMD ["bash", "start.sh"]
