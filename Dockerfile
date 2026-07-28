@@ -8,7 +8,7 @@ RUN playwright install chromium
 
 COPY . .
 
-ENV PORT=8501
 EXPOSE 8501
+EXPOSE 8000
 
 CMD ["bash", "start.sh"]
