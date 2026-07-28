@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 import fitz
 import httpx
+from playwright.async_api import async_playwright
 
 try:
     from storage import (
@@ -37,6 +38,7 @@ PDF_HEADERS = {
         "Chrome/126.0.0.0 Safari/537.36"
     ),
     "Accept": "application/pdf,application/octet-stream;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
 }
 
 
@@ -78,11 +80,20 @@ async def download_pdf(url: str, destination: Path):
 
     async with httpx.AsyncClient(follow_redirects=True, timeout=120.0, headers=headers) as client:
         response = await client.get(url)
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in {401, 403, 406, 429}:
+                logger.warning(
+                    "Direct PDF download blocked with HTTP %s; trying browser fallback",
+                    e.response.status_code,
+                )
+                return await download_pdf_with_browser(url, destination)
+            raise
 
     content_type = response.headers.get("content-type", "").lower()
     content = response.content
-    is_pdf = content.startswith(b"%PDF")
+    is_pdf = content.lstrip().startswith(b"%PDF")
 
     if not is_pdf:
         preview = content[:200].decode("utf-8", errors="replace")
@@ -96,7 +107,69 @@ async def download_pdf(url: str, destination: Path):
         "content_type": content_type or "application/pdf",
         "bytes": len(content),
         "final_url": str(response.url),
+        "download_method": "httpx",
     }
+
+
+async def download_pdf_with_browser(url: str, destination: Path):
+    parsed = urlparse(url)
+    origin = f"{parsed.scheme}://{parsed.netloc}/" if parsed.scheme and parsed.netloc else None
+
+    async with async_playwright() as playwright:
+        browser = await playwright.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-blink-features=AutomationControlled",
+            ],
+        )
+        context = await browser.new_context(
+            accept_downloads=True,
+            extra_http_headers=PDF_HEADERS,
+            user_agent=PDF_HEADERS["User-Agent"],
+        )
+
+        try:
+            page = await context.new_page()
+            if origin:
+                try:
+                    await page.goto(origin, wait_until="domcontentloaded", timeout=30000)
+                except Exception as warmup_error:
+                    logger.warning("PDF browser warmup failed: %s", warmup_error)
+
+            response = await context.request.get(
+                url,
+                headers={
+                    **PDF_HEADERS,
+                    "Referer": origin or url,
+                },
+                timeout=120000,
+            )
+
+            if not response.ok:
+                raise ValueError(f"Browser PDF download failed with HTTP {response.status}.")
+
+            content = await response.body()
+            content_type = (response.headers.get("content-type") or "").lower()
+
+            if not content.lstrip().startswith(b"%PDF"):
+                preview = content[:200].decode("utf-8", errors="replace")
+                raise ValueError(
+                    "Browser fallback did not return a valid PDF. "
+                    f"content_type={content_type or 'unknown'}, bytes={len(content)}, preview={preview!r}"
+                )
+
+            destination.write_bytes(content)
+            return {
+                "content_type": content_type or "application/pdf",
+                "bytes": len(content),
+                "final_url": response.url,
+                "download_method": "playwright",
+            }
+        finally:
+            await context.close()
+            await browser.close()
 
 
 def extract_pdf_content(pdf_path: Path, image_dir: Path):
