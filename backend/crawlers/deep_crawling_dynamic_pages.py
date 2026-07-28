@@ -1,24 +1,22 @@
 import nest_asyncio
 from urllib.parse import urlparse
-
 from crawl4ai import (
     AsyncWebCrawler,
     BrowserConfig,
     CrawlerRunConfig,
     CacheMode,
 )
-
 from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
 from crawl4ai.deep_crawling.filters import (
     FilterChain,
     DomainFilter,
 )
-
-nest_asyncio.apply()
-
-
+try:
+    import nest_asyncio
+    nest_asyncio.apply()
+except Exception:
+    pass
 async def deep_crawl_bfs(url: str):
-
     browser_config = BrowserConfig(
         headless=True,
         verbose=True
