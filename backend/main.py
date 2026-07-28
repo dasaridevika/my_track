@@ -193,6 +193,9 @@ def normalize_snapshot_result(result, request_url, public_base_url):
         "method": "snapshot",
         "url": result.get("url", request_url),
         "job_id": result.get("job_id"),
+        "message": result.get("message"),
+        "errors": result.get("errors", {}),
+        "storage_mode": result.get("storage_mode"),
         "files": normalized_files
     }
 @app.post("/crawl")
@@ -238,7 +241,7 @@ async def crawl(request: CrawlRequest):
         return JSONResponse(
             status_code=200,
             content={
-            "success": True,
+            "success": result.get("success", True) if isinstance(result, dict) else True,
             "method": method,
             "url": request.url,
             "extracted_data": result,
