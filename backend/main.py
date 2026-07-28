@@ -11,19 +11,28 @@ import logging
 from contextlib import asynccontextmanager, suppress
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
-from crawlers.page_snapshot import page_snapshot
-from crawlers.deep_crawling_dynamic_pages import deep_crawl_bfs
-from models import CrawlRequest
-from crawlers.single_page import crawl_single_page
-from crawlers.deepcrawl import deep_crawl
-from crawlers.jsonCssExtraction import css_extract
-from crawlers.jsonXpathExtraction import xpath_extract
-from crawlers.RegexExtraction import regex_extract
-from crawlers.pdfExtraction import pdf_extract
-from llm_analysis import analyze_extracted_data, extract_text_for_llm
+try:
+    from crawlers.page_snapshot import page_snapshot
+    from crawlers.deep_crawling_dynamic_pages import deep_crawl_bfs
+    from models import CrawlRequest
+    from crawlers.single_page import crawl_single_page
+    from crawlers.deepcrawl import deep_crawl
+    from crawlers.jsonCssExtraction import css_extract
+    from crawlers.jsonXpathExtraction import xpath_extract
+    from crawlers.RegexExtraction import regex_extract
+    from crawlers.pdfExtraction import pdf_extract
+    from llm_analysis import analyze_extracted_data, extract_text_for_llm
+except ModuleNotFoundError:
+    from backend.crawlers.page_snapshot import page_snapshot
+    from backend.crawlers.deep_crawling_dynamic_pages import deep_crawl_bfs
+    from backend.models import CrawlRequest
+    from backend.crawlers.single_page import crawl_single_page
+    from backend.crawlers.deepcrawl import deep_crawl
+    from backend.crawlers.jsonCssExtraction import css_extract
+    from backend.crawlers.jsonXpathExtraction import xpath_extract
+    from backend.crawlers.RegexExtraction import regex_extract
+    from backend.crawlers.pdfExtraction import pdf_extract
+    from backend.llm_analysis import analyze_extracted_data, extract_text_for_llm
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
