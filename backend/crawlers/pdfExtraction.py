@@ -7,6 +7,10 @@ import tempfile
 import logging
 from pathlib import Path
 from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, BrowserConfig
+from crawl4ai.processors.pdf import (
+    PDFCrawlerStrategy,
+    PDFContentScrapingStrategy,
+)
 
 try:
     from storage import (
@@ -104,33 +108,104 @@ async def pdf_extract(url: str):
     image_dir = Path("pdf_images") / job_id
     image_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. Configure the headless browser to mimic a real user and avoid bot detection
+    # ---------------------------------------------------------
+    # STEP 1: Use the headless browser to bypass the anti-bot
+    # protection. We navigate to the base domain first, wait
+    # for the JS challenge to resolve, and then try the PDF.
+    # ---------------------------------------------------------
     browser_config = BrowserConfig(
         headless=True,
         user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     )
 
-    # 2. Configure the run to wait for JS challenges to resolve before scraping
     run_config = CrawlerRunConfig(
-        delay_before_return_html=5.0,  # Crucial: Gives Cloudflare time to solve the JS challenge
-        page_timeout=60000,            # 60s timeout for the page to load
+        delay_before_return_html=5.0,
+        page_timeout=60000,
     )
 
     try:
-        # 3. FIX: Use the default browser-based AsyncWebCrawler (removes PDFCrawlerStrategy)
-        # The browser will execute JavaScript, solve the anti-bot challenge, and render the PDF
+        # 1. Browser solves the Cloudflare challenge
         async with AsyncWebCrawler(config=browser_config) as crawler:
             async with asyncio.timeout(80):
-                result = await crawler.arun(
-                    url=url,
-                    config=run_config
-                )
+                result = await crawler.arun(url=url, config=run_config)
+
+        # If the browser successfully fetched the PDF text content natively, we can return it
+        if result.success and result.markdown:
+            markdown = (
+                result.markdown.raw_markdown
+                if hasattr(result.markdown, "raw_markdown")
+                else result.markdown
+            )
+            
+            # If significant content was extracted, the browser handled it perfectly
+            if markdown and len(markdown.strip()) > 50:
+                response_payload = {
+                    "success": True,
+                    "url": url,
+                    "job_id": job_id,
+                    "metadata": result.metadata,
+                    "markdown": markdown,
+                    "images": sanitize_image_metadata(result.media.get("images", [])),
+                    "image_count": len(result.media.get("images", [])),
+                    "storage_config": get_bucket_config_status(),
+                }
+                
+                try:
+                    uploaded_images = upload_extracted_images(image_dir, url, job_id)
+                    extracted_json = upload_extracted_json(response_payload, url, job_id)
+                    response_payload["storage_mode"] = "bucket"
+                    response_payload["files"] = {
+                        "extraction": extracted_json,
+                        "images": uploaded_images,
+                    }
+                    return response_payload
+                finally:
+                    shutil.rmtree(image_dir, ignore_errors=True)
 
     except asyncio.TimeoutError:
         shutil.rmtree(image_dir, ignore_errors=True)
         return {
             "success": False,
-            "error": "Crawler request timed out after 80 seconds."
+            "error": "Browser timeout while trying to bypass anti-bot protection."
+        }
+    except Exception as e:
+        # If it threw ERR_ABORTED because of the PDF viewer, we intentionally ignore it
+        # and fall back to Step 2.
+        logger.warning(f"Browser navigation failed (expected for PDFs): {str(e)}")
+
+    # ---------------------------------------------------------
+    # STEP 2: The browser failed to load the PDF natively 
+    # (ERR_ABORTED). We now use the PDFCrawlerStrategy to 
+    # download the raw PDF via HTTP. Since the browser already 
+    # solved the challenge, the server will usually allow the 
+    # direct HTTP request momentarily.
+    # ---------------------------------------------------------
+    pdf_scraper = PDFContentScrapingStrategy(
+        extract_images=True,
+        save_images_locally=True,
+        image_save_dir=str(image_dir),
+        batch_size=2,
+    )
+
+    run_config_pdf = CrawlerRunConfig(
+        scraping_strategy=pdf_scraper,
+        page_timeout=60000,
+    )
+
+    try:
+        async with AsyncWebCrawler(
+            crawler_strategy=PDFCrawlerStrategy()
+        ) as crawler:
+            async with asyncio.timeout(80):
+                result = await crawler.arun(
+                    url=url,
+                    config=run_config_pdf
+                )
+    except asyncio.TimeoutError:
+        shutil.rmtree(image_dir, ignore_errors=True)
+        return {
+            "success": False,
+            "error": "PDF Crawler request timed out after 80 seconds."
         }
     except Exception as e:
         shutil.rmtree(image_dir, ignore_errors=True)
@@ -148,7 +223,6 @@ async def pdf_extract(url: str):
             "error": result.error_message
         }
 
-    # Extract markdown/text content (the browser's built-in PDF viewer renders the text)
     markdown = (
         result.markdown.raw_markdown
         if hasattr(result.markdown, "raw_markdown")
