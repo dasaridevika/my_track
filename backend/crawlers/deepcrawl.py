@@ -351,7 +351,6 @@ async def extract_txt(url: str):
 ##########################################################
 # HTML / Webpage Extraction using BestFirst Strategy
 ##########################################################
-
 async def extract_webpage(url: str):
     logger.info(f"Starting BestFirst crawl for {url}")
 
