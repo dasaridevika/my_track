@@ -11,6 +11,7 @@ import boto3
 import fitz
 import pandas as pd
 from botocore.exceptions import ClientError, NoCredentialsError
+from botocore.config import Config
 from docx import Document
 from lxml import etree
 from pptx import Presentation
@@ -42,13 +43,31 @@ SUPPORTED_TYPES = {
     ".json": "json",
     ".xml": "xml",
 }
-S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
+S3_BUCKET_NAME = os.getenv("AWS_S3_BUCKET_NAME") or os.getenv("BUCKET")
 S3_PREFIX = os.getenv("S3_PREFIX", "deep-crawl/")
-AWS_REGION = os.getenv("AWS_REGION")
-if AWS_REGION:
-    s3 = boto3.client("s3", region_name=AWS_REGION)
-else:
-    s3 = boto3.client("s3")
+AWS_ENDPOINT_URL = os.getenv("AWS_ENDPOINT_URL") or os.getenv("ENDPOINT")
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY") or os.getenv("SECRET_ACCESS_KEY")
+AWS_REGION = os.getenv("AWS_DEFAULT_REGION") or os.getenv("REGION") or "auto"
+AWS_S3_URL_STYLE = (os.getenv("AWS_S3_URL_STYLE") or "virtual").lower()
+if not S3_BUCKET_NAME:
+    raise ValueError("Missing Railway bucket name. Set AWS_S3_BUCKET_NAME or BUCKET.")
+if not AWS_ENDPOINT_URL:
+    raise ValueError("Missing Railway bucket endpoint. Set AWS_ENDPOINT_URL or ENDPOINT.")
+if not AWS_ACCESS_KEY_ID or not AWS_SECRET_ACCESS_KEY:
+    raise ValueError("Missing Railway bucket credentials.")
+s3 = boto3.client(
+    "s3",
+    endpoint_url=AWS_ENDPOINT_URL,
+    aws_access_key_id=AWS_ACCESS_KEY_ID,
+    aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+    region_name=AWS_REGION,
+    config=Config(
+        s3={
+            "addressing_style": "virtual" if AWS_S3_URL_STYLE == "virtual" else "path"
+        }
+    ),
+)
 def validate_url(url: str):
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
