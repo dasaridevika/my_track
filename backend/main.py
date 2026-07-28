@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import uuid
 import asyncio
 import logging
@@ -8,7 +9,7 @@ if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from crawlers.page_snapshot import page_snapshot
 from crawlers.deep_crawling_dynamic_pages import deep_crawl_bfs
 from models import CrawlRequest
@@ -40,8 +41,8 @@ CRAWL_HANDLERS = {
     "regex": regex_extract,
     "pdf": pdf_extract,
 }
+analysis_jobs: dict = {}
 analysis_queue: asyncio.Queue = asyncio.Queue(maxsize=100)
-analysis_jobs[job_id]["completed_at"] = time.time()
 analysis_semaphore = asyncio.Semaphore(1)
 crawl_semaphore = asyncio.Semaphore(3)
 async def process_analysis_job(job_id: str, payload: dict):
@@ -56,6 +57,7 @@ async def process_analysis_job(job_id: str, payload: dict):
             )
         analysis_jobs[job_id]["status"] = "done"
         analysis_jobs[job_id]["result"] = result
+        analysis_jobs[job_id]["completed_at"] = time.time()
         logger.info(f"Analysis completed | job_id={job_id}")
     except Exception as e:
         logger.exception("Analysis failed | job_id=%s",job_id)
