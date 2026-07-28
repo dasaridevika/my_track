@@ -23,6 +23,19 @@ from crawl4ai.deep_crawling import BestFirstCrawlingStrategy
 from crawl4ai.deep_crawling.filters import FilterChain, ContentTypeFilter
 from crawl4ai.deep_crawling.scorers import KeywordRelevanceScorer
 
+try:
+    from storage import (
+        is_bucket_configured as storage_is_bucket_configured,
+        make_object_key,
+        upload_file,
+    )
+except ModuleNotFoundError:
+    from backend.storage import (
+        is_bucket_configured as storage_is_bucket_configured,
+        make_object_key,
+        upload_file,
+    )
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s"
@@ -62,13 +75,7 @@ def get_bucket_settings():
 
 
 def is_bucket_configured():
-    s = get_bucket_settings()
-    return all([
-        s["bucket_name"],
-        s["endpoint_url"],
-        s["access_key_id"],
-        s["secret_access_key"],
-    ])
+    return storage_is_bucket_configured()
 
 
 def get_s3_client_and_bucket():
@@ -120,35 +127,19 @@ def guess_content_type(file_path: str, fallback="application/octet-stream"):
 
 
 def make_s3_key(file_type: str, original_url: str, suffix: str):
-    prefix = get_bucket_settings()["prefix"]
-    parsed = urlparse(original_url)
-    domain = parsed.netloc.replace(":", "_")
-    file_id = uuid.uuid4().hex
-    return f"{prefix}{file_type}/{domain}/{file_id}{suffix}"
+    filename = f"{file_type}{suffix}"
+    return make_object_key(f"deep-crawl/{file_type}", original_url, filename)
 
 
 def upload_file_to_s3(local_path: str, s3_key: str, content_type: str = None):
-    extra_args = {}
-    if content_type:
-        extra_args["ContentType"] = content_type
-
     try:
-        s3, bucket_name, _ = get_s3_client_and_bucket()
-        s3.upload_file(
-            local_path,
-            bucket_name,
-            s3_key,
-            ExtraArgs=extra_args if extra_args else None
-        )
-        return {
-            "bucket": bucket_name,
-            "key": s3_key,
-            "s3_uri": f"s3://{bucket_name}/{s3_key}"
-        }
+        return upload_file(local_path, s3_key)
     except NoCredentialsError:
         raise RuntimeError("Railway bucket credentials are not configured.")
     except ClientError as e:
         raise RuntimeError(f"S3 upload failed: {e}")
+    except Exception as e:
+        raise RuntimeError(f"Storage upload failed: {e}")
 
 
 def upload_json_to_s3(data: dict, s3_key: str):
