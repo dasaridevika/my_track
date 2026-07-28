@@ -136,7 +136,44 @@ if st.button(" Start Crawling", use_container_width=True):
                 elif method == "pdf":
                     st.subheader(" PDF Extraction")
                     extracted = data.get("extracted_data", data)
-                    st.json(extracted)
+                    if not extracted.get("success", False):
+                        st.error(extracted.get("error", "PDF extraction failed."))
+                    else:
+                        st.write(f"**Pages:** {extracted.get('page_count', 0)}")
+                        st.write(f"**Images:** {extracted.get('image_count', 0)}")
+
+                        files = extracted.get("files", {})
+                        source_pdf = files.get("source_pdf")
+                        extraction = files.get("extraction")
+                        images = files.get("images", [])
+
+                        if source_pdf:
+                            if source_pdf.get("url"):
+                                st.success("Source PDF uploaded")
+                                st.markdown(f"[Open Source PDF]({source_pdf['url']})")
+                            elif source_pdf.get("upload_error"):
+                                st.error(f"Source PDF upload failed: {source_pdf['upload_error']}")
+
+                        if extraction:
+                            if extraction.get("url"):
+                                st.success("Extraction JSON uploaded")
+                                st.markdown(f"[Open Extraction JSON]({extraction['url']})")
+                            elif extraction.get("upload_error"):
+                                st.error(f"Extraction JSON upload failed: {extraction['upload_error']}")
+
+                        uploaded_image_count = sum(1 for image in images if image.get("url"))
+                        if images:
+                            st.write(f"**Uploaded Images:** {uploaded_image_count}/{len(images)}")
+                            with st.expander("PDF Image Files"):
+                                for image in images:
+                                    label = image.get("filename", "image")
+                                    if image.get("url"):
+                                        st.markdown(f"- [{label}]({image['url']})")
+                                    elif image.get("upload_error"):
+                                        st.error(f"{label}: {image['upload_error']}")
+
+                    with st.expander("PDF Response"):
+                        st.json(extracted)
                 # ===========================================
                 # CSS / XPath / Regex / Single
                 # ===========================================
