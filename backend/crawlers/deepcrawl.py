@@ -31,7 +31,6 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(message)s"
 )
 logger = logging.getLogger(__name__)
-from urllib.parse import urlparse
 def validate_url(url: str):
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
@@ -71,8 +70,7 @@ async def detect_file_type(url: str):
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=15.0) as client:
             response = await client.head(url)
-            if response.status_code in (405, 501):
-                response = await client.get(url)
+            response = await client.get(url,headers={"Range": "bytes=0-0"})
             content_type = response.headers.get(
                 "content-type",
                 ""
@@ -109,20 +107,18 @@ async def detect_file_type(url: str):
 async def download_file(url: str, suffix: str):
     async with async_playwright() as p:
         request = await p.request.new_context()
-        response = await request.get(url)
-        if not response.ok:
-            raise Exception(
-                f"Unable to download file ({response.status})"
-            )
-        temp_file = tempfile.NamedTemporaryFile(
-            delete=False,
-            suffix=suffix
-        )
-        temp_file.write(await response.body())
-        temp_file.close()
-        await request.dispose()
+        request = await p.request.new_context()
+        try:
+            response = await request.get(url,timeout=30000)
+            if not response.ok:
+                raise Exception(f"Unable to download file ({response.status})")
+            temp_file = tempfile.NamedTemporaryFile(delete=False,suffix=suffix)
+            temp_file.write(await response.body())
+            temp_file.close()
+            return temp_file.name
+        finally:
+            await request.dispose()
         return temp_file.name
-    
 ##########################################################
 # Standard Response Builder
 ##########################################################
@@ -145,7 +141,8 @@ async def extract_json(url: str):
             data
         )
     finally:
-        os.remove(temp_path)
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
 async def extract_xml(url: str):
     temp_path = await download_file(url, ".xml")
     try:
