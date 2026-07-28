@@ -6,8 +6,12 @@ import asyncio
 import tempfile
 import logging
 from pathlib import Path
+from urllib.parse import urlparse
 from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, BrowserConfig
-from crawl4ai.processors.pdf import PDFContentScrapingStrategy
+from crawl4ai.processors.pdf import (
+    PDFCrawlerStrategy,          # ← THIS WAS MISSING
+    PDFContentScrapingStrategy,
+)
 
 try:
     from storage import (
@@ -111,7 +115,7 @@ async def pdf_extract(url: str):
     )
 
     run_config = CrawlerRunConfig(
-        delay_before_return_html=5.0,  # Time for Cloudflare to resolve
+        delay_before_return_html=5.0,
         page_timeout=60000,
     )
 
@@ -123,11 +127,8 @@ async def pdf_extract(url: str):
     try:
         async with AsyncWebCrawler(config=browser_config) as crawler:
             async with asyncio.timeout(80):
-                # 1. Navigate to the domain to solve the JS challenge
-                # We use the base URL to avoid the ERR_ABORTED PDF crash
-                from urllib.parse import urlparse
+                # 1. Navigate to the base domain to solve the JS challenge
                 base_url = f"{urlparse(url).scheme}://{urlparse(url).netloc}"
-                
                 await crawler.arun(url=base_url, config=run_config)
 
                 # 2. Use the browser's internal context to download the PDF
@@ -236,6 +237,7 @@ async def pdf_extract(url: str):
     # STEP 3: If we successfully got the PDF bytes from the browser,
     # parse them manually using the PDFContentScrapingStrategy.
     # -----------------------------------------------------------------
+    temp_pdf_path = None
     try:
         # Save the PDF bytes to a temporary file for the scraper
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
@@ -290,7 +292,7 @@ async def pdf_extract(url: str):
             "error": str(e),
         }
     finally:
-        if os.path.exists(temp_pdf_path):
+        if temp_pdf_path and os.path.exists(temp_pdf_path):
             os.remove(temp_pdf_path)
 
 
