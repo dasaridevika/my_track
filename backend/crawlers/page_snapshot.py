@@ -10,7 +10,10 @@ from crawl4ai import (
     CrawlerRunConfig,
     CacheMode,
 )
-from storage import is_bucket_configured, upload_file, get_download_url
+try:
+    from storage import is_bucket_configured, upload_file, get_download_url
+except ModuleNotFoundError:
+    from backend.storage import is_bucket_configured, upload_file, get_download_url
 logger = logging.getLogger(__name__)
 async def page_snapshot(url: str):
     job_id = str(uuid.uuid4())
