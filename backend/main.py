@@ -9,6 +9,7 @@ import uuid
 import asyncio
 import logging
 from contextlib import asynccontextmanager, suppress
+from urllib.parse import urlparse
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -58,6 +59,13 @@ CRAWL_HANDLERS = {
     "regex": regex_extract,
     "pdf": pdf_extract,
 }
+
+
+def url_looks_like_pdf(url: str) -> bool:
+    """Recognize direct PDF URLs, including URLs with query parameters."""
+    return urlparse(url).path.lower().endswith(".pdf")
+
+
 analysis_jobs: dict = {}
 analysis_queue: asyncio.Queue = asyncio.Queue(maxsize=100)
 analysis_semaphore = asyncio.Semaphore(1)
@@ -203,6 +211,9 @@ def normalize_snapshot_result(result, request_url, public_base_url):
 async def crawl(request: CrawlRequest):
     try:
         method = request.method.lower()
+        if method == "single" and url_looks_like_pdf(request.url):
+            logger.info("Direct PDF URL detected; switching single extraction to pdf")
+            method = "pdf"
         logger.info(f"Incoming Request | Method={method} | URL={request.url}")
         handler = CRAWL_HANDLERS.get(method)
         if handler is None:
@@ -317,6 +328,7 @@ async def extract_uploaded_pdf(file: UploadFile = File(...)):
                 analysis_jobs[analysis_job_id]["status"] = "failed"
                 analysis_jobs[analysis_job_id]["error"] = str(e)
                 llm_analysis = {"error": str(e)}
+
         return JSONResponse(
             status_code=200,
             content={
