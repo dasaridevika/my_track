@@ -172,34 +172,35 @@ st.markdown("""
         font-family: 'Outfit', sans-serif !important;
     }
     
-    /* Override native Streamlit Inputs/Selectbox */
+    /* Override native Streamlit Inputs/Selectbox to be light with black text */
     div[data-baseweb="input"] {
-        background-color: #1f2937 !important;
-        border: 1px solid #374151 !important;
+        background-color: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
         border-radius: 8px !important;
     }
     div[data-baseweb="input"] input {
-        color: #f1f5f9 !important;
+        color: #000000 !important;
     }
     
     div[data-baseweb="select"] {
-        background-color: #1f2937 !important;
-        color: #f1f5f9 !important;
+        background-color: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
         border-radius: 8px !important;
     }
     div[data-baseweb="select"] > div {
-        color: #f1f5f9 !important;
+        color: #000000 !important;
     }
     
     /* Option dropdown items */
     div[role="listbox"] {
-        background-color: #111827 !important;
+        background-color: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
     }
     div[role="option"] {
-        color: #f1f5f9 !important;
+        color: #000000 !important;
     }
     div[role="option"]:hover {
-        background-color: #1f2937 !important;
+        background-color: #f1f5f9 !important;
     }
 
     /* Premium Glow Button Override */
