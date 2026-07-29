@@ -1,9 +1,9 @@
 import os
-import asyncio
 import logging
 import httpx
 import re
 import json
+from json import JSONDecodeError
 
 logger = logging.getLogger(__name__)
 
@@ -12,26 +12,84 @@ WORKER_ANALYZE_URL = os.getenv(
     "https://shrill-smoke-7541.devika-worker.workers.dev"
 ).strip()
 
+MAX_ANALYSIS_CHARS = 12000
+
+DEFAULT_ANALYSIS = {
+    "summary": "",
+    "topics": [],
+    "keywords": [],
+    "sentiment": "neutral",
+    "important_points": [],
+    "action_items": [],
+}
+
+try:
+    import repairjson  # pip install repairjson
+except Exception:
+    repairjson = None
+
+
+def _safe_analysis(error: str = "", raw_response: str = "") -> dict:
+    payload = DEFAULT_ANALYSIS.copy()
+    if error:
+        payload["error"] = error
+    if raw_response:
+        payload["raw_response"] = raw_response[:4000]
+    return payload
+
+
+def _normalize_list(value):
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        parts = [item.strip(" \t\r\n\"'[]") for item in value.split(",")]
+        return [item for item in parts if item]
+    return [str(value).strip()]
+
+
+def _normalize_analysis_dict(data: dict) -> dict:
+    result = DEFAULT_ANALYSIS.copy()
+    if not isinstance(data, dict):
+        return result
+
+    summary = data.get("summary", "")
+    sentiment = data.get("sentiment", "neutral")
+
+    result["summary"] = str(summary).strip() if summary is not None else ""
+    result["sentiment"] = str(sentiment).strip().lower() if sentiment else "neutral"
+    result["topics"] = _normalize_list(data.get("topics", []))
+    result["keywords"] = _normalize_list(data.get("keywords", []))
+    result["important_points"] = _normalize_list(
+        data.get("important_points", data.get("takeaways", []))
+    )
+    result["action_items"] = _normalize_list(data.get("action_items", []))
+
+    if "error" in data and data["error"]:
+        result["error"] = str(data["error"])
+    if "raw_response" in data and data["raw_response"]:
+        result["raw_response"] = str(data["raw_response"])[:4000]
+
+    return result
+
+
 def extract_text_for_llm(result: dict) -> str:
     if not result or not isinstance(result, dict):
         return ""
-        
-    # -------- 1. Direct result keys --------
+
     for key in ["extracted_content", "text", "content", "markdown", "result", "extracted_text"]:
         value = result.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip()
         elif value and not isinstance(value, (str, bool, int, float)):
-            # Convert list/dict (e.g. JSON CSS extraction results) to formatted JSON string
             try:
-                return json.dumps(value, indent=2)
+                return json.dumps(value, indent=2, ensure_ascii=False)
             except Exception:
                 pass
 
-    # -------- 2. Deep Crawl (nested under data) --------
     data = result.get("extracted_data") or result.get("data")
     if isinstance(data, dict):
-        # Check if deep crawl HTML format (contains data -> pages list)
         pages = data.get("pages")
         if isinstance(pages, list):
             extracted = []
@@ -45,19 +103,17 @@ def extract_text_for_llm(result: dict) -> str:
                         break
             if extracted:
                 return "\n\n".join(extracted)
-                
-        # Check standard data keys (e.g. docx, txt, pdf)
+
         for key in ["text", "content", "markdown"]:
             value = data.get(key)
             if isinstance(value, str) and value.strip():
                 return value.strip()
             elif value and not isinstance(value, (str, bool, int, float)):
                 try:
-                    return json.dumps(value, indent=2)
+                    return json.dumps(value, indent=2, ensure_ascii=False)
                 except Exception:
                     pass
 
-    # -------- 3. Dynamic Crawl (direct pages list) --------
     pages = result.get("pages")
     if isinstance(pages, list):
         extracted = []
@@ -71,8 +127,9 @@ def extract_text_for_llm(result: dict) -> str:
                     break
         if extracted:
             return "\n\n".join(extracted)
-            
+
     return ""
+
 
 def clean_text(text: str) -> str:
     if not text:
@@ -82,154 +139,162 @@ def clean_text(text: str) -> str:
             text = str(text)
         except Exception:
             return ""
-    
-    # 1. Remove HTML tags if any are present
-    text = re.sub(r'<[^>]+>', '', text)
-    
-    # 2. Remove markdown images ![alt text](url) completely
-    text = re.sub(r'!\[([^\]]*)\]\([^)]+\)', '', text)
-    
-    # 3. Replace markdown links [text](url) with just the text
-    text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
-    
-    # 4. Remove inline URLs (http/https links) that are just standing alone
-    text = re.sub(r'https?://\S+', '', text)
-    
-    # 5. Split into lines and filter out boilerplate lines
-    lines = text.split('\n')
+
+    text = re.sub(r"<[^>]+>", "", text)
+    text = re.sub(r"!\[([^\]]*)\]\([^)]+\)", "", text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    text = re.sub(r"https?://\S+", "", text)
+
+    lines = text.split("\n")
     cleaned_lines = []
-    
-    # Boilerplate patterns to drop (navigation, footers, headers, social)
+
     boilerplate_patterns = [
-        r'.*privacy\s*policy.*',
-        r'.*terms\s*of\s*(?:service|use).*',
-        r'.*all\s*rights\s*reserved.*',
-        r'.*copyright\s*(?:©|c|\(c\))?\s*\d{4}.*',
-        r'.*cookie\s*policy.*',
-        r'.*contact\s*us.*',
-        r'.*about\s*us.*',
-        r'.*careers.*',
-        r'.*help\s*&\s*support.*',
-        r'^\s*sign\s*in\s*/\s*register\s*$',
-        r'^\s*login\s*$',
-        r'^\s*sign\s*up\s*$',
-        r'^\s*forgot\s*password\s*$',
-        r'^\s*skip\s*to\s*content\s*$',
-        r'^\s*navigation\s*$',
-        r'^\s*menu\s*$',
-        r'^#+\s*navigation\s*$',
-        r'^#+\s*menu\s*$',
-        r'.*share\s*on.*',
-        r'.*follow\s*us.*',
-        r'.*subscribe.*',
-        r'.*create\s*account.*',
-        r'.*join\s*for\s*free.*',
-        r'.*download\s*our\s*app.*',
+        r".*privacy\s*policy.*",
+        r".*terms\s*of\s*(?:service|use).*",
+        r".*all\s*rights\s*reserved.*",
+        r".*copyright\s*(?:©|c|\(c\))?\s*\d{4}.*",
+        r".*cookie\s*policy.*",
+        r".*contact\s*us.*",
+        r".*about\s*us.*",
+        r".*careers.*",
+        r".*help\s*&\s*support.*",
+        r"^\s*sign\s*in\s*/\s*register\s*$",
+        r"^\s*login\s*$",
+        r"^\s*sign\s*up\s*$",
+        r"^\s*forgot\s*password\s*$",
+        r"^\s*skip\s*to\s*content\s*$",
+        r"^\s*navigation\s*$",
+        r"^\s*menu\s*$",
+        r"^#+\s*navigation\s*$",
+        r"^#+\s*menu\s*$",
+        r".*share\s*on.*",
+        r".*follow\s*us.*",
+        r".*subscribe.*",
+        r".*create\s*account.*",
+        r".*join\s*for\s*free.*",
+        r".*download\s*our\s*app.*",
     ]
-    
+
     compiled_patterns = [re.compile(p, re.IGNORECASE) for p in boilerplate_patterns]
-    
+
     for line in lines:
         stripped = line.strip()
         if not stripped:
             continue
-        
-        # Skip lines that match boilerplate patterns (only for short lines to avoid false positives in body text)
-        if len(stripped) < 80:
-            if any(pattern.match(stripped) for pattern in compiled_patterns):
-                continue
-            
-        # Skip line if it only consists of special characters/punctuation (dividers)
-        if re.match(r'^[_\-\*\=\#\s\d\|\|]+$', stripped) and len(stripped) > 2:
+
+        if len(stripped) < 80 and any(pattern.match(stripped) for pattern in compiled_patterns):
             continue
-            
+
+        if re.match(r"^[_\\-\\*\\=\\#\\s\\d\\|\\|]+$", stripped) and len(stripped) > 2:
+            continue
+
         cleaned_lines.append(stripped)
-        
-    text = '\n'.join(cleaned_lines)
-    
-    # Normalize whitespace (remove multiple empty lines, keep spacing clean)
-    text = re.sub(r'\n{3,}', '\n\n', text)
-    
+
+    text = "\n".join(cleaned_lines)
+    text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
-def parse_llm_response(response_json: dict) -> dict:
-    if not response_json or not isinstance(response_json, dict):
-        return {"summary": str(response_json)}
-        
-    result = response_json.get("result", {})
-    if isinstance(result, dict) and ("summary" in result or "important_points" in result or "topics" in result):
-        return result
-        
-    if not isinstance(result, dict):
-        result = response_json
-        
-    choices = result.get("choices")
-    if not isinstance(choices, list) or not choices:
-        if isinstance(result, str):
-            return {"summary": result}
-        return {"summary": str(response_json)}
-        
-    message = choices[0].get("message", {})
-    if not isinstance(message, dict):
-        return {"summary": str(response_json)}
-        
-    # Fallback to reasoning_content if content is empty or null (common in reasoning models)
-    content = message.get("content") or ""
-    if not content:
-        content = message.get("reasoning_content") or ""
-        
-    if not content:
-        return {"summary": "The model returned an empty response."}
-        
-    content_str = str(content).strip()
-    
-    # 1. Try direct JSON parsing
-    try:
-        parsed_content = json.loads(content_str)
-        if isinstance(parsed_content, dict):
-            return parsed_content
-    except Exception:
-        pass
-        
-    # 2. Try to extract nested JSON block from text
-    try:
-        match = re.search(r'(\{.*\})', content_str, re.DOTALL)
-        if match:
-            parsed_content = json.loads(match.group(1))
-            if isinstance(parsed_content, dict):
-                return parsed_content
-    except Exception:
-        pass
-        
-    # 3. Try to parse key-value lines (e.g. "Topics: [A, B]", "Sentiment: positive")
-    structured = {}
-    try:
-        for line in content_str.split("\n"):
-            line = line.strip()
-            if not line or ":" not in line:
-                continue
-            key, val = line.split(":", 1)
-            key = key.strip().lower()
-            val = val.strip()
-            
-            # Clean array values from quotes/brackets
-            clean_list = lambda s: [item.strip().strip('"').strip("'").strip('[').strip(']') for item in s.split(",") if item.strip()]
-            
-            if "topic" in key:
-                structured["topics"] = clean_list(val)
-            elif "keyword" in key:
-                structured["keywords"] = clean_list(val)
-            elif "sentiment" in key:
-                structured["sentiment"] = val.strip('"').strip("'")
-            elif "important" in key or "takeaway" in key:
-                structured["important_points"] = clean_list(val)
-            elif "action" in key:
-                structured["action_items"] = clean_list(val)
-    except Exception:
-        pass
-        
-    structured["summary"] = content_str
+
+def _extract_message_content(response_json) -> str:
+    if isinstance(response_json, str):
+        return response_json.strip()
+
+    if not isinstance(response_json, dict):
+        return str(response_json).strip()
+
+    result = response_json.get("result", response_json)
+
+    if isinstance(result, dict) and any(
+        key in result for key in ["summary", "topics", "keywords", "important_points", "action_items"]
+    ):
+        return json.dumps(result, ensure_ascii=False)
+
+    if isinstance(result, str):
+        return result.strip()
+
+    if isinstance(result, dict):
+        choices = result.get("choices")
+        if isinstance(choices, list) and choices:
+            message = choices[0].get("message", {}) or {}
+            content = message.get("content") or message.get("reasoning_content") or ""
+            if isinstance(content, list):
+                return " ".join(str(item) for item in content).strip()
+            return str(content).strip()
+
+    return json.dumps(response_json, ensure_ascii=False)
+
+
+def _parse_key_value_fallback(raw_text: str) -> dict:
+    structured = DEFAULT_ANALYSIS.copy()
+
+    for line in raw_text.split("\n"):
+        line = line.strip()
+        if not line or ":" not in line:
+            continue
+
+        key, val = line.split(":", 1)
+        key = key.strip().lower()
+        val = val.strip()
+
+        if "summary" == key or key.endswith("summary"):
+            structured["summary"] = val.strip("\"'")
+        elif "topic" in key:
+            structured["topics"] = _normalize_list(val)
+        elif "keyword" in key:
+            structured["keywords"] = _normalize_list(val)
+        elif "sentiment" in key:
+            structured["sentiment"] = val.strip("\"'").lower() or "neutral"
+        elif "important" in key or "takeaway" in key:
+            structured["important_points"] = _normalize_list(val)
+        elif "action" in key:
+            structured["action_items"] = _normalize_list(val)
+
+    if not any([
+        structured["summary"],
+        structured["topics"],
+        structured["keywords"],
+        structured["important_points"],
+        structured["action_items"],
+    ]):
+        structured["error"] = "Model returned invalid JSON."
+        structured["raw_response"] = raw_text[:4000]
+
     return structured
+
+
+def parse_llm_response(response_json) -> dict:
+    raw_text = _extract_message_content(response_json)
+
+    if not raw_text:
+        return _safe_analysis("The model returned an empty response.")
+
+    try:
+        parsed = json.loads(raw_text)
+        if isinstance(parsed, dict):
+            return _normalize_analysis_dict(parsed)
+    except Exception:
+        pass
+
+    if repairjson is not None:
+        try:
+            repaired = repairjson.loads(raw_text)
+            if isinstance(repaired, dict):
+                return _normalize_analysis_dict(repaired)
+        except Exception:
+            pass
+
+    key_value_guess = _parse_key_value_fallback(raw_text)
+    if any([
+        key_value_guess.get("summary"),
+        key_value_guess.get("topics"),
+        key_value_guess.get("keywords"),
+        key_value_guess.get("important_points"),
+        key_value_guess.get("action_items"),
+    ]):
+        return _normalize_analysis_dict(key_value_guess)
+
+    return _safe_analysis("Model returned invalid JSON.", raw_text)
+
 
 async def analyze_extracted_data(
     url: str,
@@ -238,37 +303,55 @@ async def analyze_extracted_data(
     analysis_type: str = "summary"
 ):
     if not extracted_text or not extracted_text.strip():
-        raise ValueError("No extracted text available for LLM analysis.")
-        
+        return _safe_analysis("No extracted text available for LLM analysis.")
+
     raw_len = len(extracted_text)
     cleaned_text = clean_text(extracted_text)
-    
-    # Fallback to raw if cleaning filters out everything
+
     if not cleaned_text.strip():
         cleaned_text = extracted_text.strip()
-        
+
     cleaned_len = len(cleaned_text)
-    logger.info(f"LLM analysis context compression: {raw_len} chars -> {cleaned_len} chars ({((raw_len-cleaned_len)/raw_len)*100:.1f}% reduction)")
-    
-    # Enforce maximum character limit to prevent Cloudflare payload size limits or execution timeouts
-    max_chars = 12000
-    if len(cleaned_text) > max_chars:
-        cleaned_text = cleaned_text[:max_chars]
-        cleaned_len = len(cleaned_text)
-        logger.info(f"Context truncated to fit limit: {cleaned_len} chars")
+    reduction = ((raw_len - cleaned_len) / raw_len) * 100 if raw_len else 0
+    logger.info(
+        f"LLM analysis context compression: {raw_len} chars -> {cleaned_len} chars ({reduction:.1f}% reduction)"
+    )
+
+    if len(cleaned_text) > MAX_ANALYSIS_CHARS:
+        cleaned_text = cleaned_text[:MAX_ANALYSIS_CHARS]
+        logger.info(f"Context truncated to fit limit: {len(cleaned_text)} chars")
 
     payload = {
-        "url": url,
-        "title": title,
+        "url": url or "",
+        "title": title or "",
         "text": cleaned_text,
-        "analysis_type": analysis_type
+        "analysis_type": analysis_type or "summary"
     }
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        response = await client.post(WORKER_ANALYZE_URL, json=payload)
-        if response.status_code == 200:
-            parsed_data = parse_llm_response(response.json())
-            return parsed_data
-        error_body = response.text
-        raise Exception(
-            f"LLM analysis failed with status {response.status_code}: {error_body}"
-        )
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(WORKER_ANALYZE_URL, json=payload)
+
+        if response.status_code != 200:
+            return _safe_analysis(
+                f"LLM analysis failed with status {response.status_code}.",
+                response.text,
+            )
+
+        try:
+            body = response.json()
+        except (JSONDecodeError, ValueError):
+            return _safe_analysis(
+                "Worker returned non-JSON response.",
+                response.text,
+            )
+
+        return parse_llm_response(body)
+
+    except httpx.TimeoutException:
+        return _safe_analysis("LLM analysis timed out.")
+    except httpx.RequestError as exc:
+        return _safe_analysis(f"LLM request error: {str(exc)}")
+    except Exception as exc:
+        logger.exception("Unexpected LLM analysis failure")
+        return _safe_analysis(f"Unexpected LLM analysis error: {str(exc)}")
