@@ -10,6 +10,7 @@ from urllib.parse import urljoin, urlparse
 
 import fitz
 import httpx
+import requests
 from playwright.async_api import async_playwright
 
 try:
@@ -41,7 +42,7 @@ PDF_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
-PDF_EXTRACTOR_VERSION = "direct-v4-browser-discovery"
+PDF_EXTRACTOR_VERSION = "direct-v7-http-client-fallback"
 
 
 def is_pdf_content(content: bytes) -> bool:
@@ -104,10 +105,7 @@ def write_json_temp(payload: dict):
 
 
 async def download_pdf(url: str, destination: Path):
-    parsed = urlparse(url)
     headers = dict(PDF_HEADERS)
-    if parsed.scheme and parsed.netloc:
-        headers["Referer"] = f"{parsed.scheme}://{parsed.netloc}/"
 
     async with httpx.AsyncClient(follow_redirects=True, timeout=120.0, headers=headers) as client:
         response = await client.get(url)
@@ -125,6 +123,15 @@ async def download_pdf(url: str, destination: Path):
                 if range_result:
                     return range_result
 
+                requests_result = await download_pdf_with_requests(
+                    url,
+                    destination,
+                    headers,
+                    e.response.status_code,
+                )
+                if requests_result:
+                    return requests_result
+
                 logger.warning(
                     "Direct PDF download blocked with HTTP %s; trying browser fallback",
                     e.response.status_code,
@@ -138,6 +145,62 @@ async def download_pdf(url: str, destination: Path):
         return await download_pdf_with_browser(url, destination)
 
     return save_pdf_response(response, destination, "httpx")
+
+
+async def download_pdf_with_requests(
+    url: str,
+    destination: Path,
+    headers: dict,
+    blocked_status: int,
+):
+    """Retry with Requests before escalating to a browser.
+
+    CDNs sometimes apply different policies to distinct TLS/HTTP client
+    implementations.  This is a normal public-URL retry, not an attempt to
+    bypass authentication or access controls.
+    """
+
+    def request_pdf():
+        with requests.Session() as session:
+            return session.get(
+                url,
+                headers=headers,
+                allow_redirects=True,
+                timeout=(30, 120),
+            )
+
+    try:
+        response = await asyncio.to_thread(request_pdf)
+    except requests.RequestException as requests_error:
+        logger.warning(
+            "Requests PDF retry failed after HTTP %s block: %s",
+            blocked_status,
+            requests_error,
+        )
+        return None
+
+    if not response.ok:
+        logger.warning(
+            "Requests PDF retry returned HTTP %s after HTTP %s block",
+            response.status_code,
+            blocked_status,
+        )
+        return None
+
+    if not is_pdf_content(response.content):
+        logger.warning(
+            "Requests PDF retry returned non-PDF content_type=%s bytes=%s",
+            response.headers.get("content-type", "unknown"),
+            len(response.content),
+        )
+        return None
+
+    return save_pdf_response(
+        response,
+        destination,
+        "requests",
+        recovered_from_status=blocked_status,
+    )
 
 
 async def download_pdf_with_range_request(
@@ -214,6 +277,20 @@ async def download_pdf_with_browser(url: str, destination: Path):
 
         try:
             page = await context.new_page()
+            observed_pdf_responses = []
+
+            def remember_pdf_response(response):
+                """Remember browser-loaded PDF assets from dynamic viewers."""
+                try:
+                    content_type = response.headers.get("content-type", "").lower()
+                    if "pdf" in content_type or ".pdf" in response.url.lower():
+                        observed_pdf_responses.append(response)
+                except Exception:
+                    # Response metadata is optional diagnostic data.  A failed
+                    # inspection must not break navigation or extraction.
+                    pass
+
+            page.on("response", remember_pdf_response)
             if origin:
                 try:
                     await page.goto(origin, wait_until="domcontentloaded", timeout=30000)
@@ -237,6 +314,10 @@ async def download_pdf_with_browser(url: str, destination: Path):
                         content=content,
                     )
 
+            # Give a client-rendered viewer a brief opportunity to request its
+            # source document before inspecting the DOM and network responses.
+            await page.wait_for_timeout(1000)
+
             candidate_urls = await page.evaluate(
                 """() => [...new Set([
                     ...[...document.querySelectorAll('a[href], iframe[src], embed[src], object[data]')]
@@ -247,18 +328,45 @@ async def download_pdf_with_browser(url: str, destination: Path):
                         .filter(Boolean),
                 ])]"""
             )
-            candidates = [url]
+            # Do not invent a Referer for the original direct URL.  Some CDN
+            # WAF rules (including CloudFront deployments) reject same-origin
+            # or fabricated referers even though the public object is readable
+            # without one.  Links discovered in a page do retain that page as
+            # their genuine referer.
+            candidates = [(url, None)]
             candidates.extend(
-                urljoin(page.url, candidate)
+                (urljoin(page.url, candidate), page.url)
                 for candidate in candidate_urls
                 if ".pdf" in candidate.lower() or "pdf" in candidate.lower()
             )
 
+            for response in observed_pdf_responses:
+                if not response.ok:
+                    continue
+                try:
+                    content = await response.body()
+                except Exception as response_body_error:
+                    logger.debug(
+                        "Could not read a browser-observed PDF response: %s",
+                        response_body_error,
+                    )
+                    continue
+                if is_pdf_response(response.headers.get("content-type", ""), content):
+                    return save_pdf_response(
+                        response,
+                        destination,
+                        "playwright-viewer-network",
+                        content=content,
+                    )
+
             failures = []
-            for candidate in dict.fromkeys(candidates):
+            for candidate, referer in dict.fromkeys(candidates):
+                request_headers = dict(PDF_HEADERS)
+                if referer:
+                    request_headers["Referer"] = referer
                 response = await context.request.get(
                     candidate,
-                    headers={**PDF_HEADERS, "Referer": page.url or origin or url},
+                    headers=request_headers,
                     timeout=120000,
                 )
                 if not response.ok:
