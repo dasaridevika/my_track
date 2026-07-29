@@ -541,7 +541,7 @@ st.markdown(
     /* Text area output */
     .stTextArea textarea {
         background-color: #0b1220 !important;
-        color: #e5e7eb !important;
+        color: #ffffff !important;
         border: 1px solid #334155 !important;
         border-radius: 10px !important;
     }
