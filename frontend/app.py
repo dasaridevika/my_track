@@ -19,6 +19,10 @@ API_URL = os.getenv(
     "API_URL",
     "http://127.0.0.1:8000/crawl"
 )
+PDF_UPLOAD_URL = os.getenv(
+    "PDF_UPLOAD_URL",
+    f"{API_URL.rstrip('/').rsplit('/', 1)[0]}/pdf/upload",
+)
 
 # -----------------------------
 # Premium Styling Enforced Dark Theme
@@ -243,6 +247,15 @@ with col1:
         "Extraction Method",
         ["single", "deep", "dynamic", "snapshot", "css", "xpath", "regex", "pdf"]
     )
+
+    uploaded_pdf = None
+    if method == "pdf":
+        st.caption("Use a public PDF URL, or upload the file when its URL is blocked or unsupported.")
+        uploaded_pdf = st.file_uploader(
+            "Upload PDF",
+            type=["pdf"],
+            help="Uploaded PDFs are extracted and analyzed with the same LLM workflow.",
+        )
     
     st.markdown("<br>", unsafe_allow_html=True)
     start_btn = st.button("Start Extraction", use_container_width=True)
@@ -250,26 +263,53 @@ with col1:
 
 with col2:
     if start_btn:
-        if not url.strip():
-            st.warning("Please enter a valid website URL.")
+        if not url.strip() and uploaded_pdf is None:
+            st.warning("Enter a URL or upload a PDF file.")
         else:
-            payload = {
-                "url": url,
-                "method": method
-            }
             try:
-                with st.spinner("Crawling web pages and analyzing context... Please wait..."):
-                    response = requests.post(
-                        API_URL,
-                        json=payload,
-                        timeout=300
-                    )
+                if uploaded_pdf is not None:
+                    with st.spinner("Extracting the uploaded PDF and analyzing its contents... Please wait..."):
+                        response = requests.post(
+                            PDF_UPLOAD_URL,
+                            files={
+                                "file": (
+                                    uploaded_pdf.name,
+                                    uploaded_pdf.getvalue(),
+                                    "application/pdf",
+                                )
+                            },
+                            timeout=300,
+                        )
+                else:
+                    payload = {
+                        "url": url,
+                        "method": method
+                    }
+                    with st.spinner("Crawling web pages and analyzing context... Please wait..."):
+                        response = requests.post(
+                            API_URL,
+                            json=payload,
+                            timeout=300
+                        )
                 
                 if response.status_code == 200:
                     res_data = response.json()
                     data = res_data.get("data", res_data)
                     llm_analysis = data.get("llm_analysis")
-                    
+
+                    extracted_result = data.get("extracted_data", data)
+                    extraction_succeeded = data.get(
+                        "success", extracted_result.get("success", True)
+                    )
+                    if not extraction_succeeded:
+                        error = extracted_result.get("error", "The PDF could not be extracted.")
+                        st.error(f"Extraction failed: {error}")
+                        if method == "pdf" and uploaded_pdf is None:
+                            st.info("Try uploading the PDF with the Upload PDF control, then start extraction again.")
+                        with st.expander("Debug: Raw Crawl Metadata"):
+                            st.json(data)
+                        st.stop()
+
                     st.toast("Extraction completed successfully!")
                     
                     # 1. SPECIAL INTERFACES FOR STRUCTURAL EXTRACTION (css, xpath, regex)
@@ -371,6 +411,29 @@ with col2:
                         
                         st.markdown('</div>', unsafe_allow_html=True)
 
+                    # 4. SPECIAL INTERFACE FOR PDF EXTRACTION
+                    elif method == "pdf":
+                        extracted = data.get("extracted_data", data)
+                        st.markdown('<div class="card">', unsafe_allow_html=True)
+                        st.subheader("PDF Extraction Result")
+                        st.write(f"Pages extracted: {extracted.get('page_count', 0)}")
+                        download = extracted.get("download", {})
+                        if download:
+                            st.caption(
+                                f"Retrieved via: {download.get('download_method', 'unknown')}"
+                            )
+                        markdown = extracted.get("markdown", "")
+                        if markdown:
+                            st.text_area(
+                                "Extracted PDF text",
+                                markdown,
+                                height=260,
+                                disabled=True,
+                            )
+                        else:
+                            st.warning("No selectable text was found in this PDF.")
+                        st.markdown('</div>', unsafe_allow_html=True)
+
                     # AI SUMMARY DASHBOARD
                     if llm_analysis:
                         st.markdown('<div class="card summary-card">', unsafe_allow_html=True)
@@ -452,7 +515,7 @@ with col2:
                         st.json(response.json())
                     except Exception:
                         st.text(response.text)
-                    
+                        
             except requests.exceptions.Timeout:
                 st.error("Connection timed out. The backend is taking too long to respond.")
             except requests.exceptions.ConnectionError:
