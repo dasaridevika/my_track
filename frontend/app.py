@@ -567,10 +567,11 @@ with col2:
                         st.session_state.pdf_upload_error = (
             "This PDF URL is blocked by the source server (HTTP 403). "
             "Please upload the PDF file directly."
-        )
-                         if "start_btn" in st.session_state:
+        ) 
+                        if "start_btn" in st.session_state:
                              del st.session_state["start_btn"]
-                         st.rerun()
+
+                        st.rerun()              
                     st.error(f"Extraction failed: {error}")
                     with st.expander("Debug: Raw Crawl Metadata"):
                         st.json(data)
