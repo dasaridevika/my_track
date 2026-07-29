@@ -384,8 +384,6 @@ with col2:
                         # Fallback when LLM analysis was skipped or not returned
                         st.markdown('<div class="card">', unsafe_allow_html=True)
                         st.warning("No AI summary analysis was generated for this method or site.")
-                        st.subheader("Raw Extracted Data Preview")
-                        st.json(data.get("extracted_data", data))
                         st.markdown('</div>', unsafe_allow_html=True)
                         
                     # Collapsible debug section

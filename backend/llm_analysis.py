@@ -119,6 +119,12 @@ def clean_text(text: str) -> str:
         r'^\s*menu\s*$',
         r'^#+\s*navigation\s*$',
         r'^#+\s*menu\s*$',
+        r'.*share\s*on.*',
+        r'.*follow\s*us.*',
+        r'.*subscribe.*',
+        r'.*create\s*account.*',
+        r'.*join\s*for\s*free.*',
+        r'.*download\s*our\s*app.*',
     ]
     
     compiled_patterns = [re.compile(p, re.IGNORECASE) for p in boilerplate_patterns]
@@ -191,6 +197,13 @@ async def analyze_extracted_data(
     cleaned_len = len(cleaned_text)
     logger.info(f"LLM analysis context compression: {raw_len} chars -> {cleaned_len} chars ({((raw_len-cleaned_len)/raw_len)*100:.1f}% reduction)")
     
+    # Enforce maximum character limit to prevent Cloudflare payload size limits or execution timeouts
+    max_chars = 25000
+    if len(cleaned_text) > max_chars:
+        cleaned_text = cleaned_text[:max_chars] + "\n\n... [Content truncated due to length limits] ..."
+        cleaned_len = len(cleaned_text)
+        logger.info(f"Context truncated to fit limit: {cleaned_len} chars")
+
     payload = {
         "url": url,
         "title": title,
