@@ -218,38 +218,51 @@ async def crawl(request: CrawlRequest):
         logger.info(f"LLM text length for method={method}: {len(extracted_text or '')}")
         analysis_job_id = None
         analysis_status = "skipped"
+        llm_analysis = None
+        
         if method != "snapshot" and extracted_text and extracted_text.strip():
             analysis_job_id = str(uuid.uuid4())
+            logger.info(f"Performing synchronous LLM analysis | method={method} | job_id={analysis_job_id}")
+            analysis_status = "running"
             analysis_jobs[analysis_job_id] = {
-                "status": "queued",
+                "status": "running",
                 "result": None,
                 "error": None,
-                "source_url": request.url
+                "source_url": request.url,
+                "created_at": time.time()
             }
-            await analysis_queue.put((
-                analysis_job_id,
-                {
-                    "url": request.url,
-                    "title": "",
-                    "text": extracted_text,
-                    "analysis_type": "summary"
-                }
-            ))
-            analysis_status = "queued"
-            logger.info(f"Analysis queued | job_id={analysis_job_id} | method={method}")
+            try:
+                llm_analysis = await analyze_extracted_data(
+                    url=request.url,
+                    title="",
+                    extracted_text=extracted_text,
+                    analysis_type="summary"
+                )
+                analysis_status = "done"
+                analysis_jobs[analysis_job_id]["status"] = "done"
+                analysis_jobs[analysis_job_id]["result"] = llm_analysis
+                analysis_jobs[analysis_job_id]["completed_at"] = time.time()
+            except Exception as e:
+                logger.exception("Analysis failed in API endpoint")
+                analysis_status = "failed"
+                analysis_jobs[analysis_job_id]["status"] = "failed"
+                analysis_jobs[analysis_job_id]["error"] = str(e)
+                llm_analysis = {"error": str(e)}
         else:
             logger.info(f"LLM analysis skipped | method={method}")
+            
         return JSONResponse(
             status_code=200,
             content={
-            "success": result.get("success", True) if isinstance(result, dict) else True,
-            "method": method,
-            "url": request.url,
-            "extracted_data": result,
-            "analysis_job_id": analysis_job_id,
-            "analysis_status": analysis_status
-        }
-    )
+                "success": result.get("success", True) if isinstance(result, dict) else True,
+                "method": method,
+                "url": request.url,
+                "extracted_data": result,
+                "analysis_job_id": analysis_job_id,
+                "analysis_status": analysis_status,
+                "llm_analysis": llm_analysis
+            }
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -271,6 +284,40 @@ async def extract_uploaded_pdf(file: UploadFile = File(...)):
         async with crawl_semaphore:
             result = await pdf_extract_uploaded_file(contents, file.filename)
 
+        extracted_text = extract_text_for_llm(result)
+        analysis_job_id = None
+        analysis_status = "skipped"
+        llm_analysis = None
+        
+        if extracted_text and extracted_text.strip():
+            analysis_job_id = str(uuid.uuid4())
+            logger.info(f"Performing synchronous LLM analysis for uploaded PDF | job_id={analysis_job_id}")
+            analysis_status = "running"
+            analysis_jobs[analysis_job_id] = {
+                "status": "running",
+                "result": None,
+                "error": None,
+                "source_url": file.filename,
+                "created_at": time.time()
+            }
+            try:
+                llm_analysis = await analyze_extracted_data(
+                    url=result.get("url") or file.filename,
+                    title=file.filename,
+                    extracted_text=extracted_text,
+                    analysis_type="summary"
+                )
+                analysis_status = "done"
+                analysis_jobs[analysis_job_id]["status"] = "done"
+                analysis_jobs[analysis_job_id]["result"] = llm_analysis
+                analysis_jobs[analysis_job_id]["completed_at"] = time.time()
+            except Exception as e:
+                logger.exception("Analysis failed for uploaded PDF")
+                analysis_status = "failed"
+                analysis_jobs[analysis_job_id]["status"] = "failed"
+                analysis_jobs[analysis_job_id]["error"] = str(e)
+                llm_analysis = {"error": str(e)}
+
         return JSONResponse(
             status_code=200,
             content={
@@ -278,7 +325,9 @@ async def extract_uploaded_pdf(file: UploadFile = File(...)):
                 "method": "pdf_upload",
                 "url": result.get("url"),
                 "extracted_data": result,
-                "analysis_status": "skipped",
+                "analysis_job_id": analysis_job_id,
+                "analysis_status": analysis_status,
+                "llm_analysis": llm_analysis
             },
         )
     finally:
