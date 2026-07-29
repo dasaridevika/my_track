@@ -317,7 +317,6 @@ async def extract_uploaded_pdf(file: UploadFile = File(...)):
                 analysis_jobs[analysis_job_id]["status"] = "failed"
                 analysis_jobs[analysis_job_id]["error"] = str(e)
                 llm_analysis = {"error": str(e)}
-
         return JSONResponse(
             status_code=200,
             content={
