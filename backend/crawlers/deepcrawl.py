@@ -94,12 +94,17 @@ def get_s3_client_and_bucket():
         aws_access_key_id=s["access_key_id"],
         aws_secret_access_key=s["secret_access_key"],
         region_name=s["region"],
-        config=Config(
-            signature_version="s3v4",
-            s3={
-                "addressing_style": "virtual" if s["url_style"] == "virtual" else "path"
-            },
-        ),
+        config = CrawlerRunConfig(
+    deep_crawl_strategy=BFSDeepCrawlStrategy(
+        max_depth=1,
+        max_pages=10,
+        include_external=False,
+    ),
+    scraping_strategy=LXMLWebScrapingStrategy(),
+    verbose=False,
+    page_timeout=30000,
+    wait_until="domcontentloaded",
+),
     )
     return client, s["bucket_name"], s["prefix"]
 
