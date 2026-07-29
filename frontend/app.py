@@ -16,6 +16,10 @@ API_URL = os.getenv(
     "API_URL",
     "http://127.0.0.1:8000/crawl"
 )
+PDF_UPLOAD_API_URL = os.getenv(
+    "PDF_UPLOAD_API_URL",
+    f"{API_URL.rsplit('/', 1)[0]}/pdf/upload",
+)
 # -----------------------------
 # UI
 # -----------------------------
@@ -35,24 +39,37 @@ method = st.selectbox(
         "pdf"
     ]
 )
+uploaded_pdf = None
+if method == "pdf":
+    st.caption("If a website blocks the backend from downloading a PDF, download it in your browser and upload it here.")
+    uploaded_pdf = st.file_uploader("Or upload a PDF (50 MB maximum)", type=["pdf"])
 # -----------------------------
 # Crawl Button
 # -----------------------------
 if st.button(" Start Crawling", use_container_width=True):
-    if not url.strip():
-        st.warning("Please enter a URL.")
+    if not url.strip() and not uploaded_pdf:
+        st.warning("Please enter a URL or upload a PDF.")
     else:
-        payload = {
-            "url": url,
-            "method": method
-        }
         try:
             with st.spinner("🕷️ Crawling website... Please wait..."):
-                response = requests.post(
-                    API_URL,
-                    json=payload,
-                    timeout=300
-                )
+                if method == "pdf" and uploaded_pdf:
+                    response = requests.post(
+                        PDF_UPLOAD_API_URL,
+                        files={
+                            "file": (
+                                uploaded_pdf.name,
+                                uploaded_pdf.getvalue(),
+                                uploaded_pdf.type or "application/pdf",
+                            )
+                        },
+                        timeout=300,
+                    )
+                else:
+                    response = requests.post(
+                        API_URL,
+                        json={"url": url, "method": method},
+                        timeout=300,
+                    )
             if response.status_code == 200:
                 st.success("Crawling Completed!")
                 res_data = response.json()
