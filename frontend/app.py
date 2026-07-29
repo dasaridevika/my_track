@@ -20,53 +20,72 @@ API_URL = os.getenv(
 )
 
 # -----------------------------
-# Premium Styling Injection
+# Premium Styling Enforced Dark Theme
 # -----------------------------
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
     
-    html, body, [class*="css"] {
-        font-family: 'Outfit', sans-serif;
+    /* Enforce Dark Theme Background on App Container */
+    .stApp {
+        background-color: #090d16 !important;
+        color: #f1f5f9 !important;
+        font-family: 'Outfit', sans-serif !important;
     }
     
+    /* Enforce Visibility for Global Text Elements */
+    .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp p, .stApp li {
+        color: #f1f5f9 !important;
+        font-family: 'Outfit', sans-serif !important;
+    }
+    
+    /* Input Labels */
+    .stApp label {
+        color: #94a3b8 !important;
+        font-size: 0.95rem !important;
+        font-weight: 600 !important;
+        margin-bottom: 8px !important;
+    }
+    
+    /* Custom Title Gradient */
     .main-title {
-        font-size: 2.8rem;
+        font-size: 3.2rem;
         font-weight: 800;
         background: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%);
         -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
+        -webkit-text-fill-color: transparent !important;
         margin-bottom: 0.2rem;
-        letter-spacing: -0.5px;
+        letter-spacing: -0.8px;
     }
     
     .subtitle {
-        font-size: 1.1rem;
-        color: rgba(255, 255, 255, 0.7);
+        font-size: 1.15rem;
+        color: #94a3b8 !important;
         margin-bottom: 2rem;
     }
     
+    /* Card Container */
     .card {
-        background: rgba(255, 255, 255, 0.03);
-        backdrop-filter: blur(12px);
-        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: #111827 !important;
+        border: 1px solid #1f2937 !important;
         border-radius: 18px;
         padding: 24px;
         margin-bottom: 24px;
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
         transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.3s ease;
     }
     
     .card:hover {
         transform: translateY(-2px);
-        border-color: rgba(0, 242, 254, 0.25);
+        border-color: rgba(0, 242, 254, 0.3) !important;
     }
     
     .summary-card {
-        background: linear-gradient(135deg, rgba(79, 172, 254, 0.08) 0%, rgba(0, 242, 254, 0.03) 100%);
-        border-left: 5px solid #00f2fe;
+        background: linear-gradient(135deg, #1e1b4b 0%, #111827 100%) !important;
+        border-left: 5px solid #00f2fe !important;
     }
     
+    /* Styled Interactive Pills/Badges */
     .badge {
         display: inline-block;
         padding: 6px 14px;
@@ -75,25 +94,26 @@ st.markdown("""
         font-weight: 600;
         margin-right: 8px;
         margin-bottom: 8px;
-        background: rgba(0, 242, 254, 0.12);
-        color: #00f2fe;
-        border: 1px solid rgba(0, 242, 254, 0.25);
+        background: rgba(0, 242, 254, 0.12) !important;
+        color: #00f2fe !important;
+        border: 1px solid rgba(0, 242, 254, 0.25) !important;
         transition: all 0.2s ease;
     }
     .badge:hover {
-        background: rgba(0, 242, 254, 0.25);
+        background: rgba(0, 242, 254, 0.25) !important;
         transform: scale(1.05);
     }
     
     .keyword-badge {
-        background: rgba(249, 168, 37, 0.12);
-        color: #ffb300;
-        border: 1px solid rgba(249, 168, 37, 0.25);
+        background: rgba(249, 168, 37, 0.12) !important;
+        color: #ffb300 !important;
+        border: 1px solid rgba(249, 168, 37, 0.25) !important;
     }
     .keyword-badge:hover {
-        background: rgba(249, 168, 37, 0.25);
+        background: rgba(249, 168, 37, 0.25) !important;
     }
     
+    /* Sentiment Badges */
     .sentiment-tag {
         display: inline-flex;
         align-items: center;
@@ -106,21 +126,22 @@ st.markdown("""
     }
     
     .sentiment-positive {
-        background: rgba(76, 175, 80, 0.15);
-        color: #4caf50;
-        border: 1px solid rgba(76, 175, 80, 0.3);
+        background: rgba(76, 175, 80, 0.15) !important;
+        color: #4caf50 !important;
+        border: 1px solid rgba(76, 175, 80, 0.3) !important;
     }
     .sentiment-negative {
-        background: rgba(244, 67, 54, 0.15);
-        color: #f44336;
-        border: 1px solid rgba(244, 67, 54, 0.3);
+        background: rgba(244, 67, 54, 0.15) !important;
+        color: #f44336 !important;
+        border: 1px solid rgba(244, 67, 54, 0.3) !important;
     }
     .sentiment-neutral {
-        background: rgba(158, 158, 158, 0.15);
-        color: #e0e0e0;
-        border: 1px solid rgba(158, 158, 158, 0.3);
+        background: rgba(158, 158, 158, 0.15) !important;
+        color: #e2e8f0 !important;
+        border: 1px solid rgba(158, 158, 158, 0.3) !important;
     }
     
+    /* Bullet list overrides */
     .bullet-list {
         list-style-type: none;
         padding-left: 0;
@@ -132,6 +153,7 @@ st.markdown("""
         margin-bottom: 12px;
         font-size: 1rem;
         line-height: 1.5;
+        color: #e2e8f0 !important;
     }
     
     .bullet-item::before {
@@ -139,8 +161,63 @@ st.markdown("""
         position: absolute;
         left: 4px;
         top: 0;
-        color: #00f2fe;
+        color: #00f2fe !important;
         font-size: 1.1rem;
+    }
+    
+    /* Checkbox Labels */
+    .stCheckbox label p {
+        color: #e2e8f0 !important;
+        font-size: 1rem !important;
+        font-family: 'Outfit', sans-serif !important;
+    }
+    
+    /* Override native Streamlit Inputs/Selectbox */
+    div[data-baseweb="input"] {
+        background-color: #1f2937 !important;
+        border: 1px solid #374151 !important;
+        border-radius: 8px !important;
+    }
+    div[data-baseweb="input"] input {
+        color: #f1f5f9 !important;
+    }
+    
+    div[data-baseweb="select"] {
+        background-color: #1f2937 !important;
+        color: #f1f5f9 !important;
+        border-radius: 8px !important;
+    }
+    div[data-baseweb="select"] > div {
+        color: #f1f5f9 !important;
+    }
+    
+    /* Option dropdown items */
+    div[role="listbox"] {
+        background-color: #111827 !important;
+    }
+    div[role="option"] {
+        color: #f1f5f9 !important;
+    }
+    div[role="option"]:hover {
+        background-color: #1f2937 !important;
+    }
+
+    /* Premium Glow Button Override */
+    .stButton button {
+        background: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%) !important;
+        color: #090d16 !important;
+        border: none !important;
+        font-weight: 700 !important;
+        border-radius: 12px !important;
+        padding: 12px 24px !important;
+        font-size: 1rem !important;
+        box-shadow: 0 4px 14px rgba(0, 242, 254, 0.25) !important;
+        transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+    }
+    .stButton button:hover {
+        transform: translateY(-1.5px) !important;
+        box-shadow: 0 6px 20px rgba(0, 242, 254, 0.45) !important;
+        color: #090d16 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -152,7 +229,7 @@ st.markdown('<div class="main-title">🕷️ Crawl4AI AI-Scraper</div>', unsafe_
 st.markdown('<div class="subtitle">Extract and auto-summarize web content with zero-boilerplate context cleaning</div>', unsafe_allow_html=True)
 
 # -----------------------------
-# Input Sidebar
+# Main Columns
 # -----------------------------
 col1, col2 = st.columns([1, 2], gap="large")
 
