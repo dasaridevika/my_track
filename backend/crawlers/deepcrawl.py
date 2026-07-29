@@ -410,11 +410,11 @@ async def extract_webpage(url: str):
 
 
 def normalize_deepcrawl_output(raw_result):
-    if not raw_result:
+    if not raw_result or not isinstance(raw_result, dict):
         return {
             "success": False,
             "file_type": "html",
-            "message": "Empty crawl result.",
+            "message": "Empty or invalid crawl result.",
             "extracted_data": {
                 "pages": [],
                 "total_pages": 0,
@@ -423,7 +423,23 @@ def normalize_deepcrawl_output(raw_result):
             },
         }
 
-    payload = raw_result.get("data", raw_result)
+    # If the crawl failed, return the failure info gracefully instead of crashing
+    if not raw_result.get("success", False):
+        return {
+            "success": False,
+            "file_type": raw_result.get("file_type", "html"),
+            "message": raw_result.get("message", "Crawl failed"),
+            "extracted_data": {
+                "pages": [],
+                "total_pages": 0,
+                "successful_pages": 0,
+                "s3": None,
+            }
+        }
+
+    payload = raw_result.get("data")
+    if not isinstance(payload, dict):
+        payload = raw_result
 
     pages = (
         payload.get("pages")
@@ -434,6 +450,8 @@ def normalize_deepcrawl_output(raw_result):
 
     normalized_pages = []
     for item in pages:
+        if not isinstance(item, dict):
+            continue
         normalized_pages.append(
             {
                 "url": item.get("url"),
