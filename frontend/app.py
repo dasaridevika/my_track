@@ -452,7 +452,7 @@ with col2:
                         st.json(response.json())
                     except Exception:
                         st.text(response.text)
-                        
+                    
             except requests.exceptions.Timeout:
                 st.error("Connection timed out. The backend is taking too long to respond.")
             except requests.exceptions.ConnectionError:
