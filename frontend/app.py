@@ -277,19 +277,47 @@ st.markdown(
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
 
+    :root {
+        --bg-main: #090d16;
+        --bg-card: #111827;
+        --bg-card-2: #0f172a;
+        --border: #243041;
+        --text-main: #f1f5f9;
+        --text-muted: #94a3b8;
+
+        --control-bg: #ffffff;
+        --control-bg-hover: #f8fafc;
+        --control-border: #cbd5e1;
+        --control-text: #0f172a;
+        --control-placeholder: #64748b;
+
+        --accent-1: #00f2fe;
+        --accent-2: #4facfe;
+        --success: #22c55e;
+        --danger: #ef4444;
+        --warning: #f59e0b;
+        --neutral: #cbd5e1;
+    }
+
     .stApp {
-        background-color: #090d16 !important;
-        color: #f1f5f9 !important;
+        background-color: var(--bg-main) !important;
+        color: var(--text-main) !important;
         font-family: 'Outfit', sans-serif !important;
     }
 
-    .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp p, .stApp li, .stApp div, .stApp span {
-        color: #f1f5f9;
+    /* Keep text styling scoped to content, not every div/span */
+    .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6,
+    .stApp p, .stApp li, .stApp label {
         font-family: 'Outfit', sans-serif !important;
+    }
+
+    .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6,
+    .stApp p, .stApp li {
+        color: var(--text-main) !important;
     }
 
     .stApp label {
-        color: #94a3b8 !important;
+        color: var(--text-muted) !important;
         font-size: 0.95rem !important;
         font-weight: 600 !important;
         margin-bottom: 8px !important;
@@ -298,7 +326,7 @@ st.markdown(
     .main-title {
         font-size: 3rem;
         font-weight: 800;
-        background: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%);
+        background: linear-gradient(135deg, var(--accent-1) 0%, var(--accent-2) 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent !important;
         margin-bottom: 0.2rem;
@@ -307,13 +335,13 @@ st.markdown(
 
     .subtitle {
         font-size: 1.05rem;
-        color: #94a3b8 !important;
+        color: var(--text-muted) !important;
         margin-bottom: 2rem;
     }
 
     .card {
-        background: #111827 !important;
-        border: 1px solid #1f2937 !important;
+        background: var(--bg-card) !important;
+        border: 1px solid var(--border) !important;
         border-radius: 18px;
         padding: 24px;
         margin-bottom: 24px;
@@ -321,8 +349,8 @@ st.markdown(
     }
 
     .summary-card {
-        background: linear-gradient(135deg, #1e1b4b 0%, #111827 100%) !important;
-        border-left: 5px solid #00f2fe !important;
+        background: linear-gradient(135deg, #172554 0%, var(--bg-card) 100%) !important;
+        border-left: 5px solid var(--accent-1) !important;
     }
 
     .badge {
@@ -334,14 +362,14 @@ st.markdown(
         margin-right: 8px;
         margin-bottom: 8px;
         background: rgba(0, 242, 254, 0.12) !important;
-        color: #00f2fe !important;
+        color: #67e8f9 !important;
         border: 1px solid rgba(0, 242, 254, 0.25) !important;
     }
 
     .keyword-badge {
-        background: rgba(249, 168, 37, 0.12) !important;
-        color: #ffb300 !important;
-        border: 1px solid rgba(249, 168, 37, 0.25) !important;
+        background: rgba(245, 158, 11, 0.12) !important;
+        color: #fbbf24 !important;
+        border: 1px solid rgba(245, 158, 11, 0.25) !important;
     }
 
     .sentiment-tag {
@@ -356,21 +384,21 @@ st.markdown(
     }
 
     .sentiment-positive {
-        background: rgba(76, 175, 80, 0.15) !important;
-        color: #4caf50 !important;
-        border: 1px solid rgba(76, 175, 80, 0.3) !important;
+        background: rgba(34, 197, 94, 0.15) !important;
+        color: #4ade80 !important;
+        border: 1px solid rgba(34, 197, 94, 0.3) !important;
     }
 
     .sentiment-negative {
-        background: rgba(244, 67, 54, 0.15) !important;
-        color: #f44336 !important;
-        border: 1px solid rgba(244, 67, 54, 0.3) !important;
+        background: rgba(239, 68, 68, 0.15) !important;
+        color: #f87171 !important;
+        border: 1px solid rgba(239, 68, 68, 0.3) !important;
     }
 
     .sentiment-neutral {
-        background: rgba(158, 158, 158, 0.15) !important;
+        background: rgba(148, 163, 184, 0.12) !important;
         color: #e2e8f0 !important;
-        border: 1px solid rgba(158, 158, 158, 0.3) !important;
+        border: 1px solid rgba(148, 163, 184, 0.25) !important;
     }
 
     .bullet-list {
@@ -392,7 +420,7 @@ st.markdown(
         position: absolute;
         left: 4px;
         top: 0;
-        color: #00f2fe !important;
+        color: var(--accent-1) !important;
         font-size: 1.1rem;
     }
 
@@ -402,92 +430,130 @@ st.markdown(
         font-family: 'Outfit', sans-serif !important;
     }
 
-    /* Text input / number input / base input */
+    /* Text input / textarea */
     div[data-baseweb="input"] {
-        background-color: #ffffff !important;
-        border: 1px solid #cbd5e1 !important;
-        border-radius: 8px !important;
-        color: #000000 !important;
+        background-color: var(--control-bg) !important;
+        border: 1px solid var(--control-border) !important;
+        border-radius: 10px !important;
+        color: var(--control-text) !important;
+    }
+
+    div[data-baseweb="input"]:focus-within {
+        border-color: #60a5fa !important;
+        box-shadow: 0 0 0 1px #60a5fa !important;
     }
 
     div[data-baseweb="input"] input,
-    div[data-baseweb="input"] textarea,
-    div[data-baseweb="base-input"] input,
-    div[data-baseweb="base-input"] textarea {
-        color: #000000 !important;
-        -webkit-text-fill-color: #000000 !important;
+    div[data-baseweb="input"] textarea {
+        background-color: var(--control-bg) !important;
+        color: var(--control-text) !important;
+        -webkit-text-fill-color: var(--control-text) !important;
+        caret-color: var(--control-text) !important;
     }
 
     div[data-baseweb="input"] input::placeholder,
     div[data-baseweb="input"] textarea::placeholder {
-        color: #475569 !important;
-        -webkit-text-fill-color: #475569 !important;
+        color: var(--control-placeholder) !important;
+        -webkit-text-fill-color: var(--control-placeholder) !important;
         opacity: 1 !important;
     }
 
-    /* Selectbox main field */
+    /* Selectbox */
     div[data-baseweb="select"] {
-        background-color: #ffffff !important;
-        border: 1px solid #cbd5e1 !important;
-        border-radius: 8px !important;
-        color: #000000 !important;
+        color: var(--control-text) !important;
     }
 
     div[data-baseweb="select"] > div {
-        background-color: #ffffff !important;
-        color: #000000 !important;
+        background-color: var(--control-bg) !important;
+        border: 1px solid var(--control-border) !important;
+        border-radius: 10px !important;
+        color: var(--control-text) !important;
+    }
+
+    div[data-baseweb="select"] > div:hover {
+        background-color: var(--control-bg-hover) !important;
     }
 
     div[data-baseweb="select"] * {
-        color: #000000 !important;
-        -webkit-text-fill-color: #000000 !important;
+        color: var(--control-text) !important;
+        -webkit-text-fill-color: var(--control-text) !important;
     }
 
-    /* Dropdown list */
+    /* Dropdown menu */
     div[role="listbox"] {
-        background-color: #ffffff !important;
-        border: 1px solid #cbd5e1 !important;
+        background-color: var(--control-bg) !important;
+        border: 1px solid var(--control-border) !important;
+        border-radius: 10px !important;
     }
 
     div[role="option"] {
-        background-color: #ffffff !important;
-        color: #000000 !important;
-    }
-
-    div[role="option"] * {
-        color: #000000 !important;
-        -webkit-text-fill-color: #000000 !important;
+        background-color: var(--control-bg) !important;
+        color: var(--control-text) !important;
     }
 
     div[role="option"]:hover {
-        background-color: #f1f5f9 !important;
-        color: #000000 !important;
+        background-color: #e2e8f0 !important;
+        color: var(--control-text) !important;
     }
 
-    /* Multiselect tags / selected chips with white background */
-    span[data-baseweb="tag"] {
+    div[role="option"] * {
+        color: var(--control-text) !important;
+        -webkit-text-fill-color: var(--control-text) !important;
+    }
+
+    /* File uploader */
+    [data-testid="stFileUploader"] section {
         background-color: #ffffff !important;
-        color: #000000 !important;
-        border: 1px solid #cbd5e1 !important;
+        border: 1px dashed var(--control-border) !important;
+        border-radius: 14px !important;
     }
 
-    span[data-baseweb="tag"] * {
-        color: #000000 !important;
-        -webkit-text-fill-color: #000000 !important;
+    [data-testid="stFileUploader"] section * {
+        color: var(--control-text) !important;
+        -webkit-text-fill-color: var(--control-text) !important;
     }
 
-    /* File uploader dropzone text if you later make it white */
     [data-testid="stFileUploaderDropzone"] {
-        color: #000000 !important;
+        background-color: #ffffff !important;
+    }
+
+    [data-testid="stFileUploaderDropzone"]:hover {
+        background-color: #f8fafc !important;
     }
 
     [data-testid="stFileUploaderDropzone"] * {
-        color: #000000 !important;
+        color: var(--control-text) !important;
+        -webkit-text-fill-color: var(--control-text) !important;
     }
 
+    /* Uploaded file name pills */
+    [data-testid="stFileUploaderFile"] {
+        background-color: #f8fafc !important;
+        border: 1px solid var(--control-border) !important;
+        border-radius: 10px !important;
+    }
+
+    [data-testid="stFileUploaderFile"] * {
+        color: var(--control-text) !important;
+        -webkit-text-fill-color: var(--control-text) !important;
+    }
+
+    /* Text area output */
+    .stTextArea textarea {
+        background-color: #0b1220 !important;
+        color: #e5e7eb !important;
+        border: 1px solid #334155 !important;
+        border-radius: 10px !important;
+    }
+
+    .stTextArea textarea::placeholder {
+        color: #94a3b8 !important;
+    }
+
+    /* Buttons */
     .stButton button {
-        background: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%) !important;
-        color: #090d16 !important;
+        background: linear-gradient(135deg, var(--accent-1) 0%, var(--accent-2) 100%) !important;
+        color: #08111f !important;
         border: none !important;
         font-weight: 700 !important;
         border-radius: 12px !important;
@@ -497,7 +563,29 @@ st.markdown(
     }
 
     .stButton button:hover {
-        color: #090d16 !important;
+        color: #08111f !important;
+        filter: brightness(1.03);
+    }
+
+    /* Alerts */
+    [data-testid="stAlert"] {
+        border-radius: 12px !important;
+    }
+
+    /* Expander */
+    [data-testid="stExpander"] {
+        background-color: var(--bg-card) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 12px !important;
+    }
+
+    [data-testid="stExpander"] * {
+        color: var(--text-main) !important;
+    }
+
+    /* Dataframe and code blocks */
+    .stDataFrame, .stCodeBlock, pre, code {
+        border-radius: 10px !important;
     }
 </style>
 """,
