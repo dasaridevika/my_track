@@ -5,7 +5,8 @@ run_config = CrawlerRunConfig()
 browser_config = BrowserConfig(
     headless=True,
     enable_stealth=True,
-    ignore_https_errors=True
+    ignore_https_errors=True,
+    extra_args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu", "--disable-dev-shm-usage"]
 )
 
 async def crawl_single_page(url: str):

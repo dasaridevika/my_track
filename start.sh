@@ -10,7 +10,7 @@ fi
 
 export PYTHONPATH="$(pwd)/backend:$(pwd):$PYTHONPATH"
 export API_URL="${API_URL:-http://127.0.0.1:${BACKEND_PORT}/crawl}"
-playwright install chromium
+export PLAYWRIGHT_BROWSERS_PATH="/app/.bin/ms-playwright"
 
 python -m uvicorn backend.main:app --host 127.0.0.1 --port "$BACKEND_PORT" &
 BACKEND_PID=$!

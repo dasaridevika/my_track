@@ -342,7 +342,8 @@ async def extract_webpage(url: str):
         headless=True,
         verbose=False,
         enable_stealth=True,
-        ignore_https_errors=True
+        ignore_https_errors=True,
+        extra_args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu", "--disable-dev-shm-usage"]
     )
 
     crawl_config = CrawlerRunConfig(

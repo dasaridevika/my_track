@@ -15,7 +15,8 @@ async def deep_crawl_bfs(url: str):
         headless=True,
         verbose=True,
         enable_stealth=True,
-        ignore_https_errors=True
+        ignore_https_errors=True,
+        extra_args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu", "--disable-dev-shm-usage"]
     )
 
     js_code = [
