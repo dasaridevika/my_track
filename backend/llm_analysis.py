@@ -198,9 +198,9 @@ async def analyze_extracted_data(
     logger.info(f"LLM analysis context compression: {raw_len} chars -> {cleaned_len} chars ({((raw_len-cleaned_len)/raw_len)*100:.1f}% reduction)")
     
     # Enforce maximum character limit to prevent Cloudflare payload size limits or execution timeouts
-    max_chars = 25000
+    max_chars = 12000
     if len(cleaned_text) > max_chars:
-        cleaned_text = cleaned_text[:max_chars] + "\n\n... [Content truncated due to length limits] ..."
+        cleaned_text = cleaned_text[:max_chars]
         cleaned_len = len(cleaned_text)
         logger.info(f"Context truncated to fit limit: {cleaned_len} chars")
 
