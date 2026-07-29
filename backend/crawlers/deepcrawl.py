@@ -126,7 +126,7 @@ async def detect_file_type(url: str) -> str:
             detected = file_type_from_content_type(response.headers.get("content-type", ""))
             if detected:
                 return detected
-    except httpx.HTTPError as error:
+    except Exception as error:
         logger.info("HEAD request failed for %s: %s", url, error)
 
     return SUPPORTED_TYPES.get(Path(urlparse(url).path).suffix.lower(), "html")
