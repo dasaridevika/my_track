@@ -442,6 +442,79 @@ def extract_pdf_content(pdf_path: Path, image_dir: Path):
     }
 
 
+async def create_pdf_response(
+    pdf_path: Path,
+    image_dir: Path,
+    job_id: str,
+    source_url: str,
+    download_info: dict,
+):
+    """Extract a local PDF and upload its artifacts using the shared pipeline."""
+    extracted = await asyncio.to_thread(extract_pdf_content, pdf_path, image_dir)
+    response_payload = {
+        "success": True,
+        "url": source_url,
+        "job_id": job_id,
+        "extractor_version": PDF_EXTRACTOR_VERSION,
+        "download": download_info,
+        "page_count": extracted["page_count"],
+        "markdown": extracted["markdown"],
+        "pages": extracted["pages"],
+        "images": extracted["images"],
+        "image_count": extracted["image_count"],
+        "storage_config": get_bucket_config_status(),
+    }
+
+    uploaded_images = []
+    for image in extracted["images"]:
+        image_path = image_dir / image["filename"]
+        file_data = upload_or_report(
+            str(image_path),
+            f"pdf-extractions/{job_id}/images",
+            source_url,
+            image["filename"],
+        )
+        file_data["page"] = image["page"]
+        uploaded_images.append(file_data)
+
+    extraction_json_path = write_json_temp(response_payload)
+    try:
+        extraction_file = upload_or_report(
+            extraction_json_path,
+            f"pdf-extractions/{job_id}",
+            source_url,
+            "extraction.json",
+        )
+    finally:
+        if os.path.exists(extraction_json_path):
+            os.remove(extraction_json_path)
+
+    source_file = upload_or_report(
+        str(pdf_path),
+        f"pdf-extractions/{job_id}",
+        source_url,
+        "source.pdf",
+    )
+
+    response_payload["storage_mode"] = "bucket" if is_bucket_configured() else "bucket_unconfigured"
+    response_payload["files"] = {
+        "source_pdf": source_file,
+        "extraction": extraction_file,
+        "images": uploaded_images,
+    }
+    return response_payload
+
+
+def pdf_error_response(source_url: str, error: Exception | str):
+    return {
+        "success": False,
+        "url": source_url,
+        "extractor_version": PDF_EXTRACTOR_VERSION,
+        "error": str(error),
+        "storage_config": get_bucket_config_status(),
+    }
+
+
 async def pdf_extract(url: str):
     job_id = uuid.uuid4().hex
     work_dir = Path(tempfile.mkdtemp(prefix=f"pdf-extract-{job_id}-"))
@@ -450,83 +523,41 @@ async def pdf_extract(url: str):
     pdf_path = work_dir / "source.pdf"
 
     try:
-        download_info = await download_pdf(url, pdf_path)
-        extracted = await asyncio.to_thread(extract_pdf_content, pdf_path, image_dir)
+        download_info = await download_pdf(url.strip(), pdf_path)
+        return await create_pdf_response(pdf_path, image_dir, job_id, url, download_info)
+    except Exception as error:
+        logger.exception("PDF URL extraction failed")
+        return pdf_error_response(url, error)
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
 
-        response_payload = {
-            "success": True,
-            "url": url,
-            "job_id": job_id,
-            "extractor_version": PDF_EXTRACTOR_VERSION,
-            "download": download_info,
-            "page_count": extracted["page_count"],
-            "markdown": extracted["markdown"],
-            "pages": extracted["pages"],
-            "images": extracted["images"],
-            "image_count": extracted["image_count"],
-            "storage_config": get_bucket_config_status(),
+
+async def pdf_extract_uploaded_file(file_bytes: bytes, filename: str | None):
+    """Extract a user-uploaded PDF when remote URL access is unavailable."""
+    safe_filename = Path(filename or "uploaded.pdf").name or "uploaded.pdf"
+    source_url = f"upload://{safe_filename}"
+    job_id = uuid.uuid4().hex
+    work_dir = Path(tempfile.mkdtemp(prefix=f"pdf-upload-{job_id}-"))
+    image_dir = work_dir / "images"
+    image_dir.mkdir(parents=True, exist_ok=True)
+    pdf_path = work_dir / "source.pdf"
+
+    try:
+        if not is_pdf_content(file_bytes):
+            raise ValueError("The uploaded file is not a valid PDF.")
+
+        pdf_path.write_bytes(file_bytes)
+        download_info = {
+            "content_type": "application/pdf",
+            "bytes": len(file_bytes),
+            "final_url": source_url,
+            "download_method": "upload",
+            "filename": safe_filename,
         }
-
-        uploaded_images = []
-        for image in extracted["images"]:
-            image_path = image_dir / image["filename"]
-            file_data = upload_or_report(
-                str(image_path),
-                f"pdf-extractions/{job_id}/images",
-                url,
-                image["filename"],
-            )
-            file_data["page"] = image["page"]
-            uploaded_images.append(file_data)
-
-        extraction_json_path = write_json_temp(response_payload)
-        try:
-            extraction_file = upload_or_report(
-                extraction_json_path,
-                f"pdf-extractions/{job_id}",
-                url,
-                "extraction.json",
-            )
-        finally:
-            if os.path.exists(extraction_json_path):
-                os.remove(extraction_json_path)
-
-        source_file = upload_or_report(
-            str(pdf_path),
-            f"pdf-extractions/{job_id}",
-            url,
-            "source.pdf",
-        )
-
-        response_payload["storage_mode"] = "bucket" if is_bucket_configured() else "bucket_unconfigured"
-        response_payload["files"] = {
-            "source_pdf": source_file,
-            "extraction": extraction_file,
-            "images": uploaded_images,
-        }
-        return response_payload
-
-    except httpx.HTTPStatusError as e:
-        logger.exception("PDF download failed")
-        return {
-            "success": False,
-            "url": url,
-            "extractor_version": PDF_EXTRACTOR_VERSION,
-            "error": (
-                f"PDF download failed with HTTP {e.response.status_code}. "
-                "The range/browser fallback code did not recover this response."
-            ),
-            "storage_config": get_bucket_config_status(),
-        }
-    except Exception as e:
-        logger.exception("PDF extraction failed")
-        return {
-            "success": False,
-            "url": url,
-            "extractor_version": PDF_EXTRACTOR_VERSION,
-            "error": str(e),
-            "storage_config": get_bucket_config_status(),
-        }
+        return await create_pdf_response(pdf_path, image_dir, job_id, source_url, download_info)
+    except Exception as error:
+        logger.exception("Uploaded PDF extraction failed")
+        return pdf_error_response(source_url, error)
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 
