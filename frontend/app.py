@@ -1,6 +1,7 @@
 import os
 import streamlit as st
 import requests
+
 # -----------------------------
 # Page Configuration
 # -----------------------------
@@ -9,6 +10,7 @@ st.set_page_config(
     page_icon="🕷️",
     layout="wide"
 )
+
 # -----------------------------
 # Backend API URL
 # -----------------------------
@@ -16,18 +18,22 @@ API_URL = os.getenv(
     "API_URL",
     "http://127.0.0.1:8000/crawl"
 )
+
 PDF_UPLOAD_API_URL = os.getenv(
     "PDF_UPLOAD_API_URL",
     f"{API_URL.rsplit('/', 1)[0]}/pdf/upload",
 )
+
 # -----------------------------
 # UI
 # -----------------------------
 st.title("🕷️ Crawl4AI Web Scraper")
 st.write("Extract structured information from websites using Crawl4AI.")
-url = st.text_input(" Enter Website URL")
+
+url = st.text_input("Enter Website URL")
+
 method = st.selectbox(
-    " Select Extraction Method",
+    "Select Extraction Method",
     [
         "single",
         "deep",
@@ -39,14 +45,16 @@ method = st.selectbox(
         "pdf"
     ]
 )
+
 uploaded_pdf = None
 if method == "pdf":
     st.caption("If a website blocks the backend from downloading a PDF, download it in your browser and upload it here.")
     uploaded_pdf = st.file_uploader("Or upload a PDF (50 MB maximum)", type=["pdf"])
+
 # -----------------------------
 # Crawl Button
 # -----------------------------
-if st.button(" Start Crawling", use_container_width=True):
+if st.button("Start Crawling", use_container_width=True):
     if not url.strip() and not uploaded_pdf:
         st.warning("Please enter a URL or upload a PDF.")
     else:
@@ -70,43 +78,111 @@ if st.button(" Start Crawling", use_container_width=True):
                         json={"url": url, "method": method},
                         timeout=300,
                     )
+
             if response.status_code == 200:
                 st.success("Crawling Completed!")
+
                 res_data = response.json()
                 data = res_data.get("data", res_data)
-               # ===========================================
-               # Deep Crawl / Dynamic Crawl
-               # ===========================================
-               if method in ["deep", "dynamic"]:
-                   st.subheader("🌐 Crawl Results")
-                   extracted = data.get("extracted_data", data)
-                   pages = (
-                    extracted.get("pages")
-                    or extracted.get("results")
-                    or extracted.get("crawl_results")
-                    or extracted.get("visited_pages")
-                    or []
-                    )
-                   if isinstance(pages, dict):
+
+                # ===========================================
+                # Deep Crawl / Dynamic Crawl
+                # ===========================================
+                if method in ["deep", "dynamic"]:
+                    st.subheader("🌐 Crawl Results")
+
+                    extracted = data.get("extracted_data") or data.get("data") or data
+                    pages = extracted.get("pages", [])
+
+                    if isinstance(pages, dict):
                         pages = pages.get("pages", [])
-                   if pages:
-                        st.write(f"**Total Pages Crawled:** {extracted.get('total_pages', len(pages))}")
+
+                    if pages:
+                        total_pages = extracted.get("total_pages", len(pages))
+                        successful_pages = extracted.get(
+                            "successful_pages",
+                            sum(1 for page in pages if page.get("success"))
+                        )
+
+                        st.write(f"**Total Pages Crawled:** {total_pages}")
+                        st.write(f"**Successful Pages:** {successful_pages}")
+
+                        s3_file = extracted.get("s3")
+                        if s3_file:
+                            st.markdown(f"[📥 Download crawl result JSON]({s3_file})")
+
                         for i, page in enumerate(pages, 1):
-                            with st.expander(f"Page {i}: {page.get('url', 'No URL')}"):
-                                st.write(f"**Title:** {page.get('title', 'N/A')}")
-                                st.write(f"**URL:** {page.get('url', 'N/A')}")
-                                st.write(f"**Status:** {page.get('status', 'N/A')}")
+                            page_url = page.get("url", "No URL")
+                            page_title = page.get("title", "Untitled")
+                            page_success = page.get("success", False)
+                            page_status = page.get("status") or page.get("status_code") or "N/A"
+                            error_message = page.get("error_message")
+
+                            with st.expander(f"Page {i}: {page_title} | Success: {page_success} | Status: {page_status}"):
+                                st.write(f"**URL:** {page_url}")
+                                st.write(f"**Title:** {page_title}")
+                                st.write(f"**Success:** {page_success}")
+                                st.write(f"**Status Code:** {page_status}")
+
+                                if error_message:
+                                    st.warning(f"Error: {error_message}")
+
+                                metadata = page.get("metadata", {})
+                                if metadata:
+                                    st.write("**Metadata:**")
+                                    st.json(metadata, expanded=False)
+
+                                links = page.get("links", {})
+                                if links:
+                                    st.write("**Links:**")
+                                    st.json(links, expanded=False)
+
+                                media = page.get("media", {})
+                                if media:
+                                    st.write("**Media:**")
+                                    st.json(media, expanded=False)
+
                                 content = (
                                     page.get("content")
                                     or page.get("text")
                                     or page.get("markdown")
                                     or page.get("html")
-                                    or "No content found."
+                                    or ""
+                                )
+
+                                markdown_content = page.get("markdown", "")
+                                html_content = page.get("html", "")
+
+                                if content:
+                                    st.text_area(
+                                        f"Content Preview - Page {i}",
+                                        content,
+                                        height=250,
+                                        key=f"content_{i}"
                                     )
-                                st.text_area("Content", content, height=250)
+                                else:
+                                    st.info("No content found for this page.")
+
+                                if markdown_content:
+                                    st.text_area(
+                                        f"Markdown - Page {i}",
+                                        markdown_content,
+                                        height=200,
+                                        key=f"markdown_{i}"
+                                    )
+
+                                if html_content:
+                                    st.text_area(
+                                        f"HTML - Page {i}",
+                                        html_content[:5000],
+                                        height=200,
+                                        key=f"html_{i}"
+                                    )
                     else:
                         st.warning("No pages were returned.")
-                        st.json(data)
+                        st.write("### Debug Response")
+                        st.json(data, expanded=False)
+
                 # ===========================================
                 # Snapshot
                 # ===========================================
@@ -114,16 +190,20 @@ if st.button(" Start Crawling", use_container_width=True):
                     st.subheader("📸 Page Snapshot")
                     extracted = data.get("extracted_data", data)
                     files = extracted.get("files", {})
+
                     st.write(f"**URL:** {extracted.get('url')}")
                     st.write(f"**Success:** {extracted.get('success')}")
                     st.write(f"**Job ID:** {extracted.get('job_id', 'N/A')}")
+
                     if not extracted.get("success", False):
                         st.error(extracted.get("message", "Snapshot failed."))
                     elif extracted.get("errors"):
                         st.warning("Snapshot completed with partial artifact failures.")
+
                     if extracted.get("errors"):
                         with st.expander("Snapshot Errors"):
                             st.json(extracted["errors"])
+
                     if "screenshot" in files:
                         shot = files["screenshot"]
                         if shot.get("upload_error"):
@@ -134,6 +214,7 @@ if st.button(" Start Crawling", use_container_width=True):
                         elif shot.get("local_path"):
                             st.success("Screenshot generated")
                             st.info(f"Saved locally: {shot['local_path']}")
+
                     if "pdf" in files:
                         pdf = files["pdf"]
                         if pdf.get("upload_error"):
@@ -144,6 +225,7 @@ if st.button(" Start Crawling", use_container_width=True):
                         elif pdf.get("local_path"):
                             st.success("PDF generated")
                             st.info(f"Saved locally: {pdf['local_path']}")
+
                     if "mhtml" in files:
                         mhtml = files["mhtml"]
                         if mhtml.get("upload_error"):
@@ -154,14 +236,17 @@ if st.button(" Start Crawling", use_container_width=True):
                         elif mhtml.get("local_path"):
                             st.success("MHTML generated")
                             st.info(f"Saved locally: {mhtml['local_path']}")
+
                     with st.expander("Snapshot Response"):
                         st.json(extracted)
+
                 # ===========================================
                 # PDF Extraction
                 # ===========================================
                 elif method == "pdf":
-                    st.subheader(" PDF Extraction")
+                    st.subheader("PDF Extraction")
                     extracted = data.get("extracted_data", data)
+
                     if not extracted.get("success", False):
                         st.error(extracted.get("error", "PDF extraction failed."))
                     else:
@@ -200,6 +285,7 @@ if st.button(" Start Crawling", use_container_width=True):
 
                     with st.expander("PDF Response"):
                         st.json(extracted)
+
                 # ===========================================
                 # CSS / XPath / Regex / Single
                 # ===========================================
@@ -207,22 +293,23 @@ if st.button(" Start Crawling", use_container_width=True):
                     st.subheader("Extraction Result")
                     extracted = data.get("extracted_data", data)
                     st.json(extracted)
+
                 if data.get("llm_analysis"):
-                    st.subheader(" AI Analysis")
+                    st.subheader("AI Analysis")
                     st.write(data["llm_analysis"])
+
             else:
-                st.error(f" API Error: {response.status_code}")
+                st.error(f"API Error: {response.status_code}")
                 try:
                     st.json(response.json())
                 except Exception:
                     st.text(response.text)
+
         except requests.exceptions.Timeout:
-            st.error(
-                "⏳ Request timed out. The backend may still be processing. Please try again."
-            )
+            st.error("⏳ Request timed out. The backend may still be processing. Please try again.")
+
         except requests.exceptions.ConnectionError:
-            st.error(
-                "Unable to connect to the backend API. Please ensure the backend is running."
-            )
+            st.error("Unable to connect to the backend API. Please ensure the backend is running.")
+
         except Exception as e:
             st.error(f"Unexpected Error: {e}")
