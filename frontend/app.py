@@ -295,6 +295,10 @@ with col2:
                 if response.status_code == 200:
                     res_data = response.json()
                     data = res_data.get("data", res_data)
+                    if data.get("method") == "pdf":
+                        # The backend promotes direct *.pdf URLs submitted
+                        # with the default "single" method to PDF extraction.
+                        method = "pdf"
                     llm_analysis = data.get("llm_analysis")
 
                     extracted_result = data.get("extracted_data", data)
