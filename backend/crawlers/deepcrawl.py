@@ -240,7 +240,6 @@ async def extract_csv(url: str):
     path = await download_file(url, ".csv")
     try:
         frame = pd.read_csv(path)
-
         return build_response(
             True,
             "csv",
