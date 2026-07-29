@@ -33,15 +33,32 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(
 logger = logging.getLogger(__name__)
 
 SUPPORTED_TYPES = {
-    ".html": "html", ".htm": "html", ".php": "html", ".asp": "html",
-    ".aspx": "html", ".pdf": "pdf", ".csv": "csv", ".xls": "excel",
-    ".xlsx": "excel", ".doc": "docx", ".docx": "docx", ".ppt": "pptx",
-    ".pptx": "pptx", ".txt": "txt", ".json": "json", ".xml": "xml",
+    ".html": "html",
+    ".htm": "html",
+    ".php": "html",
+    ".asp": "html",
+    ".aspx": "html",
+    ".pdf": "pdf",
+    ".csv": "csv",
+    ".xls": "excel",
+    ".xlsx": "excel",
+    ".doc": "docx",
+    ".docx": "docx",
+    ".ppt": "pptx",
+    ".pptx": "pptx",
+    ".txt": "txt",
+    ".json": "json",
+    ".xml": "xml",
 }
 
 
 def build_response(success: bool, file_type: str, data=None, message: str = ""):
-    return {"success": success, "file_type": file_type, "message": message, "data": data}
+    return {
+        "success": success,
+        "file_type": file_type,
+        "message": message,
+        "data": data,
+    }
 
 
 def validate_url(url: str) -> None:
@@ -76,7 +93,8 @@ def maybe_upload_json(data: dict, file_type: str, url: str):
 
 
 def file_type_from_content_type(content_type: str) -> str | None:
-    content_type = content_type.lower()
+    content_type = (content_type or "").lower()
+
     if "text/html" in content_type:
         return "html"
     if "application/pdf" in content_type:
@@ -95,11 +113,13 @@ def file_type_from_content_type(content_type: str) -> str | None:
         return "xml"
     if "text/plain" in content_type:
         return "txt"
+
     return None
 
 
 async def detect_file_type(url: str) -> str:
     headers = {"User-Agent": "Mozilla/5.0 (compatible; MyTrackCrawler/1.0)"}
+
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=20.0, headers=headers) as client:
             response = await client.head(url)
@@ -114,9 +134,11 @@ async def detect_file_type(url: str) -> str:
 
 async def download_file(url: str, suffix: str) -> str:
     headers = {"User-Agent": "Mozilla/5.0 (compatible; MyTrackCrawler/1.0)"}
+
     async with httpx.AsyncClient(follow_redirects=True, timeout=90.0, headers=headers) as client:
         response = await client.get(url)
         response.raise_for_status()
+
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as handle:
             handle.write(response.content)
             return handle.name
@@ -127,7 +149,15 @@ async def extract_json(url: str):
     try:
         with open(path, encoding="utf-8") as handle:
             content = json.load(handle)
-        return build_response(True, "json", {"s3": maybe_upload(path, "json", url, "source.json"), "content": content})
+
+        return build_response(
+            True,
+            "json",
+            {
+                "s3": maybe_upload(path, "json", url, "source.json"),
+                "content": content,
+            },
+        )
     finally:
         if os.path.exists(path):
             os.remove(path)
@@ -138,7 +168,15 @@ async def extract_xml(url: str):
     try:
         root = etree.parse(path).getroot()
         content = etree.tostring(root, pretty_print=True, encoding="unicode")
-        return build_response(True, "xml", {"s3": maybe_upload(path, "xml", url, "source.xml"), "content": content})
+
+        return build_response(
+            True,
+            "xml",
+            {
+                "s3": maybe_upload(path, "xml", url, "source.xml"),
+                "content": content,
+            },
+        )
     finally:
         if os.path.exists(path):
             os.remove(path)
@@ -149,12 +187,17 @@ async def extract_pdf(url: str):
     try:
         with fitz.open(path) as document:
             pages = [{"page": index + 1, "text": page.get_text()} for index, page in enumerate(document)]
-        return build_response(True, "pdf", {
-            "s3": maybe_upload(path, "pdf", url, "source.pdf"),
-            "page_count": len(pages),
-            "pages": pages,
-            "text": "\n".join(page["text"] for page in pages),
-        })
+
+        return build_response(
+            True,
+            "pdf",
+            {
+                "s3": maybe_upload(path, "pdf", url, "source.pdf"),
+                "page_count": len(pages),
+                "pages": pages,
+                "text": "\n".join(page["text"] for page in pages),
+            },
+        )
     except Exception as error:
         logger.exception("PDF extraction failed")
         return build_response(False, "pdf", None, str(error))
@@ -168,6 +211,7 @@ async def extract_excel(url: str):
     try:
         workbook = pd.ExcelFile(path)
         sheets = {}
+
         for name in workbook.sheet_names:
             frame = pd.read_excel(path, sheet_name=name)
             sheets[name] = {
@@ -175,7 +219,15 @@ async def extract_excel(url: str):
                 "columns": list(frame.columns),
                 "preview": frame.head(10).fillna("").to_dict(orient="records"),
             }
-        return build_response(True, "excel", {"s3": maybe_upload(path, "excel", url, "source.xlsx"), "sheets": sheets})
+
+        return build_response(
+            True,
+            "excel",
+            {
+                "s3": maybe_upload(path, "excel", url, "source.xlsx"),
+                "sheets": sheets,
+            },
+        )
     except Exception as error:
         logger.exception("Excel extraction failed")
         return build_response(False, "excel", None, str(error))
@@ -188,11 +240,20 @@ async def extract_csv(url: str):
     path = await download_file(url, ".csv")
     try:
         frame = pd.read_csv(path)
-        return build_response(True, "csv", {
-            "s3": maybe_upload(path, "csv", url, "source.csv"),
-            "rows": len(frame), "columns": list(frame.columns),
-            "preview": frame.head(10).fillna("").to_dict(orient="records"),
-        })
+
+        return build_response(
+            True,
+            "csv",
+            {
+                "s3": maybe_upload(path, "csv", url, "source.csv"),
+                "rows": len(frame),
+                "columns": list(frame.columns),
+                "preview": frame.head(10).fillna("").to_dict(orient="records"),
+            },
+        )
+    except Exception as error:
+        logger.exception("CSV extraction failed")
+        return build_response(False, "csv", None, str(error))
     finally:
         if os.path.exists(path):
             os.remove(path)
@@ -203,7 +264,18 @@ async def extract_docx(url: str):
     try:
         document = Document(path)
         text = "\n".join(paragraph.text for paragraph in document.paragraphs)
-        return build_response(True, "docx", {"s3": maybe_upload(path, "docx", url, "source.docx"), "text": text})
+
+        return build_response(
+            True,
+            "docx",
+            {
+                "s3": maybe_upload(path, "docx", url, "source.docx"),
+                "text": text,
+            },
+        )
+    except Exception as error:
+        logger.exception("DOCX extraction failed")
+        return build_response(False, "docx", None, str(error))
     finally:
         if os.path.exists(path):
             os.remove(path)
@@ -214,10 +286,22 @@ async def extract_pptx(url: str):
     try:
         presentation = Presentation(path)
         slides = []
+
         for number, slide in enumerate(presentation.slides, start=1):
             text = "\n".join(shape.text for shape in slide.shapes if hasattr(shape, "text"))
             slides.append({"slide": number, "text": text})
-        return build_response(True, "pptx", {"s3": maybe_upload(path, "pptx", url, "source.pptx"), "slides": slides})
+
+        return build_response(
+            True,
+            "pptx",
+            {
+                "s3": maybe_upload(path, "pptx", url, "source.pptx"),
+                "slides": slides,
+            },
+        )
+    except Exception as error:
+        logger.exception("PPTX extraction failed")
+        return build_response(False, "pptx", None, str(error))
     finally:
         if os.path.exists(path):
             os.remove(path)
@@ -228,27 +312,48 @@ async def extract_txt(url: str):
     try:
         with open(path, encoding="utf-8", errors="ignore") as handle:
             text = handle.read()
-        return build_response(True, "txt", {"s3": maybe_upload(path, "txt", url, "source.txt"), "text": text})
+
+        return build_response(
+            True,
+            "txt",
+            {
+                "s3": maybe_upload(path, "txt", url, "source.txt"),
+                "text": text,
+            },
+        )
+    except Exception as error:
+        logger.exception("TXT extraction failed")
+        return build_response(False, "txt", None, str(error))
     finally:
         if os.path.exists(path):
             os.remove(path)
 
 
 def markdown_text(markdown) -> str:
-    return getattr(markdown, "fit_markdown", None) or getattr(markdown, "raw_markdown", None) or str(markdown or "")
+    return (
+        getattr(markdown, "fit_markdown", None)
+        or getattr(markdown, "raw_markdown", None)
+        or str(markdown or "")
+    )
 
 
 async def extract_webpage(url: str):
-    """Crawl a public website and follow up to ten same-domain pages."""
+    """Crawl a public website and follow same-domain links."""
     browser_config = BrowserConfig(headless=True, verbose=False)
+
     crawl_config = CrawlerRunConfig(
-        deep_crawl_strategy=BFSDeepCrawlStrategy(max_depth=1, max_pages=10, include_external=False),
+        deep_crawl_strategy=BFSDeepCrawlStrategy(
+            max_depth=1,
+            max_pages=10,
+            include_external=False,
+        ),
         scraping_strategy=LXMLWebScrapingStrategy(),
         cache_mode=CacheMode.BYPASS,
         page_timeout=30_000,
         wait_until="domcontentloaded",
         verbose=False,
     )
+
     try:
         async with asyncio.timeout(90):
             async with AsyncWebCrawler(config=browser_config) as crawler:
@@ -257,31 +362,42 @@ async def extract_webpage(url: str):
         if not isinstance(results, list):
             results = [results]
 
-        pages = [{
-            "url": getattr(result, "url", url),
-            "title": getattr(result, "title", ""),
-            "success": getattr(result, "success", False),
-            "markdown": markdown_text(getattr(result, "markdown", "")),
-            "html": getattr(result, "html", ""),
-            "metadata": getattr(result, "metadata", {}),
-            "links": getattr(result, "links", {}),
-            "media": getattr(result, "media", {}),
-            "error_message": getattr(result, "error_message", None),
-        } for result in results]
+        pages = []
+        for result in results:
+            pages.append(
+                {
+                    "url": getattr(result, "url", url),
+                    "title": getattr(result, "title", ""),
+                    "success": getattr(result, "success", False),
+                    "status_code": getattr(result, "status_code", None),
+                    "markdown": markdown_text(getattr(result, "markdown", "")),
+                    "html": getattr(result, "html", ""),
+                    "metadata": getattr(result, "metadata", {}),
+                    "links": getattr(result, "links", {}),
+                    "media": getattr(result, "media", {}),
+                    "error_message": getattr(result, "error_message", None),
+                }
+            )
 
         if not pages:
             return build_response(False, "html", None, "The website returned no crawlable pages.")
 
         output = {
             "total_pages": len(pages),
-            "successful_pages": sum(page["success"] for page in pages),
+            "successful_pages": sum(1 for page in pages if page["success"]),
             "pages": pages,
         }
+
         return build_response(
-            bool(output["successful_pages"]), "html",
-            {"s3": maybe_upload_json(output, "html", url), **output},
+            bool(output["successful_pages"]),
+            "html",
+            {
+                "s3": maybe_upload_json(output, "html", url),
+                **output,
+            },
             "" if output["successful_pages"] else "The website blocked or failed the crawl.",
         )
+
     except asyncio.TimeoutError:
         return build_response(False, "html", None, "Crawl timed out after 90 seconds.")
     except Exception as error:
@@ -289,20 +405,92 @@ async def extract_webpage(url: str):
         return build_response(False, "html", None, str(error))
 
 
+def normalize_deepcrawl_output(raw_result):
+    if not raw_result:
+        return {
+            "success": False,
+            "file_type": "html",
+            "message": "Empty crawl result.",
+            "extracted_data": {
+                "pages": [],
+                "total_pages": 0,
+                "successful_pages": 0,
+                "s3": None,
+            },
+        }
+
+    payload = raw_result.get("data", raw_result)
+
+    pages = (
+        payload.get("pages")
+        or payload.get("results")
+        or payload.get("visited_pages")
+        or []
+    )
+
+    normalized_pages = []
+    for item in pages:
+        normalized_pages.append(
+            {
+                "url": item.get("url"),
+                "title": item.get("title") or item.get("meta_title") or "Untitled",
+                "content": item.get("content") or item.get("text") or item.get("markdown") or "",
+                "markdown": item.get("markdown") or "",
+                "html": item.get("html") or "",
+                "success": item.get("success", False),
+                "status": item.get("status") or item.get("status_code") or 200,
+                "metadata": item.get("metadata", {}),
+                "links": item.get("links", {}),
+                "media": item.get("media", {}),
+                "error_message": item.get("error_message"),
+            }
+        )
+
+    return {
+        "success": raw_result.get("success", False),
+        "file_type": raw_result.get("file_type", "html"),
+        "message": raw_result.get("message", ""),
+        "extracted_data": {
+            "pages": normalized_pages,
+            "total_pages": payload.get("total_pages", len(normalized_pages)),
+            "successful_pages": payload.get(
+                "successful_pages",
+                sum(1 for page in normalized_pages if page.get("success"))
+            ),
+            "s3": payload.get("s3"),
+        },
+    }
+
+
 async def deep_crawl(url: str):
     """Choose the correct extractor for a public HTTP(S) URL."""
     try:
         validate_url(url)
         file_type = await detect_file_type(url)
+
         extractors = {
-            "html": extract_webpage, "pdf": extract_pdf, "excel": extract_excel,
-            "csv": extract_csv, "docx": extract_docx, "pptx": extract_pptx,
-            "txt": extract_txt, "json": extract_json, "xml": extract_xml,
+            "html": extract_webpage,
+            "pdf": extract_pdf,
+            "excel": extract_excel,
+            "csv": extract_csv,
+            "docx": extract_docx,
+            "pptx": extract_pptx,
+            "txt": extract_txt,
+            "json": extract_json,
+            "xml": extract_xml,
         }
+
         extractor = extractors.get(file_type)
         if extractor is None:
             return build_response(False, file_type, None, f"Unsupported file type: {file_type}")
-        return await extractor(url)
+
+        result = await extractor(url)
+
+        if file_type == "html":
+            return normalize_deepcrawl_output(result)
+
+        return result
+
     except Exception as error:
         logger.exception("Crawl failed")
         return build_response(False, "unknown", None, str(error))
