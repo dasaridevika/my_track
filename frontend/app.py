@@ -402,37 +402,87 @@ st.markdown(
         font-family: 'Outfit', sans-serif !important;
     }
 
+    /* Text input / number input / base input */
     div[data-baseweb="input"] {
         background-color: #ffffff !important;
         border: 1px solid #cbd5e1 !important;
         border-radius: 8px !important;
-    }
-
-    div[data-baseweb="input"] input {
         color: #000000 !important;
     }
 
+    div[data-baseweb="input"] input,
+    div[data-baseweb="input"] textarea,
+    div[data-baseweb="base-input"] input,
+    div[data-baseweb="base-input"] textarea {
+        color: #000000 !important;
+        -webkit-text-fill-color: #000000 !important;
+    }
+
+    div[data-baseweb="input"] input::placeholder,
+    div[data-baseweb="input"] textarea::placeholder {
+        color: #475569 !important;
+        -webkit-text-fill-color: #475569 !important;
+        opacity: 1 !important;
+    }
+
+    /* Selectbox main field */
     div[data-baseweb="select"] {
         background-color: #ffffff !important;
         border: 1px solid #cbd5e1 !important;
         border-radius: 8px !important;
-    }
-
-    div[data-baseweb="select"] > div {
         color: #000000 !important;
     }
 
+    div[data-baseweb="select"] > div {
+        background-color: #ffffff !important;
+        color: #000000 !important;
+    }
+
+    div[data-baseweb="select"] * {
+        color: #000000 !important;
+        -webkit-text-fill-color: #000000 !important;
+    }
+
+    /* Dropdown list */
     div[role="listbox"] {
         background-color: #ffffff !important;
         border: 1px solid #cbd5e1 !important;
     }
 
     div[role="option"] {
+        background-color: #ffffff !important;
         color: #000000 !important;
+    }
+
+    div[role="option"] * {
+        color: #000000 !important;
+        -webkit-text-fill-color: #000000 !important;
     }
 
     div[role="option"]:hover {
         background-color: #f1f5f9 !important;
+        color: #000000 !important;
+    }
+
+    /* Multiselect tags / selected chips with white background */
+    span[data-baseweb="tag"] {
+        background-color: #ffffff !important;
+        color: #000000 !important;
+        border: 1px solid #cbd5e1 !important;
+    }
+
+    span[data-baseweb="tag"] * {
+        color: #000000 !important;
+        -webkit-text-fill-color: #000000 !important;
+    }
+
+    /* File uploader dropzone text if you later make it white */
+    [data-testid="stFileUploaderDropzone"] {
+        color: #000000 !important;
+    }
+
+    [data-testid="stFileUploaderDropzone"] * {
+        color: #000000 !important;
     }
 
     .stButton button {
