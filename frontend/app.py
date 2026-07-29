@@ -2,6 +2,7 @@ import os
 import streamlit as st
 import requests
 import json
+from urllib.parse import urlparse
 
 # -----------------------------
 # Page Configuration
@@ -23,6 +24,10 @@ PDF_UPLOAD_URL = os.getenv(
     "PDF_UPLOAD_URL",
     f"{API_URL.rstrip('/').rsplit('/', 1)[0]}/pdf/upload",
 )
+
+
+def url_looks_like_pdf(url: str) -> bool:
+    return urlparse(url.strip()).path.lower().endswith(".pdf")
 
 # -----------------------------
 # Premium Styling Enforced Dark Theme
@@ -248,14 +253,26 @@ with col1:
         ["single", "deep", "dynamic", "snapshot", "css", "xpath", "regex", "pdf"]
     )
 
+    show_pdf_upload = (
+        method == "pdf"
+        or url_looks_like_pdf(url)
+        or st.session_state.get("show_pdf_upload", False)
+    )
     uploaded_pdf = None
-    if method == "pdf":
+    if show_pdf_upload:
         st.caption("Use a public PDF URL, or upload the file when its URL is blocked or unsupported.")
+        if st.session_state.get("pdf_upload_error"):
+            st.warning(
+                "The URL could not be downloaded. Upload the PDF file below to continue."
+            )
         uploaded_pdf = st.file_uploader(
             "Upload PDF",
             type=["pdf"],
             help="Uploaded PDFs are extracted and analyzed with the same LLM workflow.",
         )
+        if uploaded_pdf is not None:
+            st.session_state.pop("show_pdf_upload", None)
+            st.session_state.pop("pdf_upload_error", None)
     
     st.markdown("<br>", unsafe_allow_html=True)
     start_btn = st.button("Start Extraction", use_container_width=True)
@@ -309,7 +326,9 @@ with col2:
                         error = extracted_result.get("error", "The PDF could not be extracted.")
                         st.error(f"Extraction failed: {error}")
                         if method == "pdf" and uploaded_pdf is None:
-                            st.info("Try uploading the PDF with the Upload PDF control, then start extraction again.")
+                            st.session_state["show_pdf_upload"] = True
+                            st.session_state["pdf_upload_error"] = error
+                            st.rerun()
                         with st.expander("Debug: Raw Crawl Metadata"):
                             st.json(data)
                         st.stop()
