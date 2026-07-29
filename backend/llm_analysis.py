@@ -29,7 +29,7 @@ def extract_text_for_llm(result: dict) -> str:
                 pass
 
     # -------- 2. Deep Crawl (nested under data) --------
-    data = result.get("data")
+    data = result.get("extracted_data") or result.get("data")
     if isinstance(data, dict):
         # Check if deep crawl HTML format (contains data -> pages list)
         pages = data.get("pages")
