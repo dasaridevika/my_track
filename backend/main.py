@@ -11,7 +11,7 @@ import logging
 from contextlib import asynccontextmanager, suppress
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 try:
@@ -23,7 +23,7 @@ try:
     from crawlers.jsonCssExtraction import css_extract
     from crawlers.jsonXpathExtraction import xpath_extract
     from crawlers.RegexExtraction import regex_extract
-    from crawlers.pdfExtraction import pdf_extract
+    from crawlers.pdfExtraction import pdf_extract, pdf_extract_uploaded_file
     from llm_analysis import analyze_extracted_data, extract_text_for_llm
 except ModuleNotFoundError:
     from backend.crawlers.page_snapshot import page_snapshot
@@ -34,7 +34,7 @@ except ModuleNotFoundError:
     from backend.crawlers.jsonCssExtraction import css_extract
     from backend.crawlers.jsonXpathExtraction import xpath_extract
     from backend.crawlers.RegexExtraction import regex_extract
-    from backend.crawlers.pdfExtraction import pdf_extract
+    from backend.crawlers.pdfExtraction import pdf_extract, pdf_extract_uploaded_file
     from backend.llm_analysis import analyze_extracted_data, extract_text_for_llm
 logging.basicConfig(
     level=logging.INFO,
@@ -47,6 +47,7 @@ PUBLIC_BASE_URL = os.getenv(
     "PUBLIC_BASE_URL",
     ""
 ).rstrip("/")
+MAX_PDF_UPLOAD_BYTES = 50 * 1024 * 1024
 CRAWL_HANDLERS = {
     "single": crawl_single_page,
     "deep": deep_crawl,
@@ -254,6 +255,34 @@ async def crawl(request: CrawlRequest):
     except Exception as e:
         logger.exception("Unhandled Exception")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/pdf/upload")
+async def extract_uploaded_pdf(file: UploadFile = File(...)):
+    """Extract a PDF supplied by the user when its remote URL is blocked."""
+    try:
+        contents = await file.read(MAX_PDF_UPLOAD_BYTES + 1)
+        if len(contents) > MAX_PDF_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail="PDF is too large. The upload limit is 50 MB.",
+            )
+
+        async with crawl_semaphore:
+            result = await pdf_extract_uploaded_file(contents, file.filename)
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": result.get("success", False),
+                "method": "pdf_upload",
+                "url": result.get("url"),
+                "extracted_data": result,
+                "analysis_status": "skipped",
+            },
+        )
+    finally:
+        await file.close()
 @app.get("/health")
 async def health():
     return {"status": "ok"}
