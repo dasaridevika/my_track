@@ -157,6 +157,9 @@ def parse_llm_response(response_json: dict) -> dict:
         return {"summary": str(response_json)}
         
     result = response_json.get("result", {})
+    if isinstance(result, dict) and ("summary" in result or "important_points" in result or "topics" in result):
+        return result
+        
     if not isinstance(result, dict):
         result = response_json
         
