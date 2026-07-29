@@ -564,14 +564,16 @@ with col2:
 
                     if request_method == "pdf" and uploaded_pdf is None:
                         st.session_state.show_pdf_upload = True
-                        st.session_state.pdf_upload_error = error
+                        st.session_state.pdf_upload_error = (
+            "This PDF URL is blocked by the source server (HTTP 403). "
+            "Please upload the PDF file directly."
+        )
                         st.rerun()
 
                     st.error(f"Extraction failed: {error}")
                     with st.expander("Debug: Raw Crawl Metadata"):
                         st.json(data)
                     st.stop()
-
                 st.toast("Extraction completed successfully!")
 
                 if backend_method in ["css", "xpath", "regex"]:
