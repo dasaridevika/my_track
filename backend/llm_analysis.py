@@ -158,25 +158,75 @@ def parse_llm_response(response_json: dict) -> dict:
         
     result = response_json.get("result", {})
     if not isinstance(result, dict):
-        return {"summary": str(result)}
+        result = response_json
         
     choices = result.get("choices")
     if not isinstance(choices, list) or not choices:
+        if isinstance(result, str):
+            return {"summary": result}
         return {"summary": str(response_json)}
         
-    content = choices[0].get("message", {}).get("content", "")
+    message = choices[0].get("message", {})
+    if not isinstance(message, dict):
+        return {"summary": str(response_json)}
+        
+    # Fallback to reasoning_content if content is empty or null (common in reasoning models)
+    content = message.get("content") or ""
     if not content:
-        return {"summary": str(response_json)}
+        content = message.get("reasoning_content") or ""
         
-    # Try to parse the inner JSON string
+    if not content:
+        return {"summary": "The model returned an empty response."}
+        
+    content_str = str(content).strip()
+    
+    # 1. Try direct JSON parsing
     try:
-        parsed_content = json.loads(content)
+        parsed_content = json.loads(content_str)
         if isinstance(parsed_content, dict):
             return parsed_content
     except Exception:
         pass
         
-    return {"summary": content}
+    # 2. Try to extract nested JSON block from text
+    try:
+        match = re.search(r'(\{.*\})', content_str, re.DOTALL)
+        if match:
+            parsed_content = json.loads(match.group(1))
+            if isinstance(parsed_content, dict):
+                return parsed_content
+    except Exception:
+        pass
+        
+    # 3. Try to parse key-value lines (e.g. "Topics: [A, B]", "Sentiment: positive")
+    structured = {}
+    try:
+        for line in content_str.split("\n"):
+            line = line.strip()
+            if not line or ":" not in line:
+                continue
+            key, val = line.split(":", 1)
+            key = key.strip().lower()
+            val = val.strip()
+            
+            # Clean array values from quotes/brackets
+            clean_list = lambda s: [item.strip().strip('"').strip("'").strip('[').strip(']') for item in s.split(",") if item.strip()]
+            
+            if "topic" in key:
+                structured["topics"] = clean_list(val)
+            elif "keyword" in key:
+                structured["keywords"] = clean_list(val)
+            elif "sentiment" in key:
+                structured["sentiment"] = val.strip('"').strip("'")
+            elif "important" in key or "takeaway" in key:
+                structured["important_points"] = clean_list(val)
+            elif "action" in key:
+                structured["action_items"] = clean_list(val)
+    except Exception:
+        pass
+        
+    structured["summary"] = content_str
+    return structured
 
 async def analyze_extracted_data(
     url: str,
