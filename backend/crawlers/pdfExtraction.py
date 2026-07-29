@@ -560,8 +560,6 @@ async def pdf_extract_uploaded_file(file_bytes: bytes, filename: str | None):
         return pdf_error_response(source_url, error)
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
-
-
 if __name__ == "__main__":
     async def main():
         data = await pdf_extract(
