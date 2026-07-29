@@ -348,7 +348,7 @@ async def extract_webpage(url: str):
     crawl_config = CrawlerRunConfig(
         deep_crawl_strategy=BFSDeepCrawlStrategy(
             max_depth=1,
-            max_pages=10,
+            max_pages=5,
             include_external=False,
         ),
         scraping_strategy=LXMLWebScrapingStrategy(),
@@ -356,6 +356,7 @@ async def extract_webpage(url: str):
         page_timeout=30_000,
         wait_until="domcontentloaded",
         verbose=False,
+        semaphore_count=1,
     )
 
     try:

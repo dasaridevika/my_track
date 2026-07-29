@@ -41,6 +41,7 @@ async def deep_crawl_bfs(url: str):
         max_depth=1,
         include_external=False,
         filter_chain=url_filter,
+        max_pages=5,
     )
 
     crawler_config = CrawlerRunConfig(
@@ -48,6 +49,7 @@ async def deep_crawl_bfs(url: str):
         session_id="deep_bfs_session",
         js_code=js_code,
         deep_crawl_strategy=bfs_strategy,
+        semaphore_count=1,
     )
 
     async with AsyncWebCrawler(config=browser_config) as crawler:
