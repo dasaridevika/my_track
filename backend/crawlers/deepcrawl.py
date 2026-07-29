@@ -338,7 +338,12 @@ def markdown_text(markdown) -> str:
 
 async def extract_webpage(url: str):
     """Crawl a public website and follow same-domain links."""
-    browser_config = BrowserConfig(headless=True, verbose=False)
+    browser_config = BrowserConfig(
+        headless=True,
+        verbose=False,
+        enable_stealth=True,
+        ignore_https_errors=True
+    )
 
     crawl_config = CrawlerRunConfig(
         deep_crawl_strategy=BFSDeepCrawlStrategy(

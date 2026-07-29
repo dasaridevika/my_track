@@ -1,10 +1,15 @@
 import asyncio
-from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
+from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
 
 run_config = CrawlerRunConfig()
+browser_config = BrowserConfig(
+    headless=True,
+    enable_stealth=True,
+    ignore_https_errors=True
+)
 
 async def crawl_single_page(url: str):
-    async with AsyncWebCrawler() as crawler:
+    async with AsyncWebCrawler(config=browser_config) as crawler:
         async with asyncio.timeout(80):
             result = await crawler.arun(
                 url=url,

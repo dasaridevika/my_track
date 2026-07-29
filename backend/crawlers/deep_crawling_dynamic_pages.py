@@ -13,7 +13,9 @@ from crawl4ai.deep_crawling.filters import (
 async def deep_crawl_bfs(url: str):
     browser_config = BrowserConfig(
         headless=True,
-        verbose=True
+        verbose=True,
+        enable_stealth=True,
+        ignore_https_errors=True
     )
 
     js_code = [
