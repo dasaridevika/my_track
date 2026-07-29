@@ -11,7 +11,7 @@ import logging
 from contextlib import asynccontextmanager, suppress
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 try:
@@ -23,7 +23,7 @@ try:
     from crawlers.jsonCssExtraction import css_extract
     from crawlers.jsonXpathExtraction import xpath_extract
     from crawlers.RegexExtraction import regex_extract
-    from crawlers.pdfExtraction import pdf_extract
+    from crawlers.pdfExtraction import pdf_extract, pdf_extract_uploaded_file
     from llm_analysis import analyze_extracted_data, extract_text_for_llm
 except ModuleNotFoundError:
     from backend.crawlers.page_snapshot import page_snapshot
@@ -34,7 +34,7 @@ except ModuleNotFoundError:
     from backend.crawlers.jsonCssExtraction import css_extract
     from backend.crawlers.jsonXpathExtraction import xpath_extract
     from backend.crawlers.RegexExtraction import regex_extract
-    from backend.crawlers.pdfExtraction import pdf_extract
+    from backend.crawlers.pdfExtraction import pdf_extract, pdf_extract_uploaded_file
     from backend.llm_analysis import analyze_extracted_data, extract_text_for_llm
 logging.basicConfig(
     level=logging.INFO,
@@ -47,6 +47,7 @@ PUBLIC_BASE_URL = os.getenv(
     "PUBLIC_BASE_URL",
     ""
 ).rstrip("/")
+MAX_PDF_UPLOAD_BYTES = 50 * 1024 * 1024
 CRAWL_HANDLERS = {
     "single": crawl_single_page,
     "deep": deep_crawl,
@@ -193,6 +194,9 @@ def normalize_snapshot_result(result, request_url, public_base_url):
         "method": "snapshot",
         "url": result.get("url", request_url),
         "job_id": result.get("job_id"),
+        "message": result.get("message"),
+        "errors": result.get("errors", {}),
+        "storage_mode": result.get("storage_mode"),
         "files": normalized_files
     }
 @app.post("/crawl")
@@ -214,40 +218,120 @@ async def crawl(request: CrawlRequest):
         logger.info(f"LLM text length for method={method}: {len(extracted_text or '')}")
         analysis_job_id = None
         analysis_status = "skipped"
+        llm_analysis = None
+        
         if method != "snapshot" and extracted_text and extracted_text.strip():
             analysis_job_id = str(uuid.uuid4())
+            logger.info(f"Performing synchronous LLM analysis | method={method} | job_id={analysis_job_id}")
+            analysis_status = "running"
             analysis_jobs[analysis_job_id] = {
-                "status": "queued",
+                "status": "running",
                 "result": None,
                 "error": None,
-                "source_url": request.url
+                "source_url": request.url,
+                "created_at": time.time()
             }
-            await analysis_queue.put((
-                analysis_job_id,
-                {
-                    "url": request.url,
-                    "title": "",
-                    "text": extracted_text,
-                    "analysis_type": "summary"
-                }
-            ))
-            analysis_status = "queued"
-            logger.info(f"Analysis queued | job_id={analysis_job_id} | method={method}")
+            try:
+                llm_analysis = await analyze_extracted_data(
+                    url=request.url,
+                    title="",
+                    extracted_text=extracted_text,
+                    analysis_type="summary"
+                )
+                analysis_status = "done"
+                analysis_jobs[analysis_job_id]["status"] = "done"
+                analysis_jobs[analysis_job_id]["result"] = llm_analysis
+                analysis_jobs[analysis_job_id]["completed_at"] = time.time()
+            except Exception as e:
+                logger.exception("Analysis failed in API endpoint")
+                analysis_status = "failed"
+                analysis_jobs[analysis_job_id]["status"] = "failed"
+                analysis_jobs[analysis_job_id]["error"] = str(e)
+                llm_analysis = {"error": str(e)}
         else:
             logger.info(f"LLM analysis skipped | method={method}")
+            
         return JSONResponse(
             status_code=200,
             content={
-            "success": True,
-            "method": method,
-            "url": request.url,
-            "extracted_data": result,
-            "analysis_job_id": analysis_job_id,
-            "analysis_status": analysis_status
-        }
-    )
+                "success": result.get("success", True) if isinstance(result, dict) else True,
+                "method": method,
+                "url": request.url,
+                "extracted_data": result,
+                "analysis_job_id": analysis_job_id,
+                "analysis_status": analysis_status,
+                "llm_analysis": llm_analysis
+            }
+        )
     except HTTPException:
         raise
     except Exception as e:
         logger.exception("Unhandled Exception")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/pdf/upload")
+async def extract_uploaded_pdf(file: UploadFile = File(...)):
+    """Extract a PDF supplied by the user when its remote URL is blocked."""
+    try:
+        contents = await file.read(MAX_PDF_UPLOAD_BYTES + 1)
+        if len(contents) > MAX_PDF_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail="PDF is too large. The upload limit is 50 MB.",
+            )
+
+        async with crawl_semaphore:
+            result = await pdf_extract_uploaded_file(contents, file.filename)
+
+        extracted_text = extract_text_for_llm(result)
+        analysis_job_id = None
+        analysis_status = "skipped"
+        llm_analysis = None
+        
+        if extracted_text and extracted_text.strip():
+            analysis_job_id = str(uuid.uuid4())
+            logger.info(f"Performing synchronous LLM analysis for uploaded PDF | job_id={analysis_job_id}")
+            analysis_status = "running"
+            analysis_jobs[analysis_job_id] = {
+                "status": "running",
+                "result": None,
+                "error": None,
+                "source_url": file.filename,
+                "created_at": time.time()
+            }
+            try:
+                llm_analysis = await analyze_extracted_data(
+                    url=result.get("url") or file.filename,
+                    title=file.filename,
+                    extracted_text=extracted_text,
+                    analysis_type="summary"
+                )
+                analysis_status = "done"
+                analysis_jobs[analysis_job_id]["status"] = "done"
+                analysis_jobs[analysis_job_id]["result"] = llm_analysis
+                analysis_jobs[analysis_job_id]["completed_at"] = time.time()
+            except Exception as e:
+                logger.exception("Analysis failed for uploaded PDF")
+                analysis_status = "failed"
+                analysis_jobs[analysis_job_id]["status"] = "failed"
+                analysis_jobs[analysis_job_id]["error"] = str(e)
+                llm_analysis = {"error": str(e)}
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": result.get("success", False),
+                "method": "pdf_upload",
+                "url": result.get("url"),
+                "extracted_data": result,
+                "analysis_job_id": analysis_job_id,
+                "analysis_status": analysis_status,
+                "llm_analysis": llm_analysis
+            },
+        )
+    finally:
+        await file.close()
+@app.get("/health")
+async def health():
+    return {"status": "ok"}

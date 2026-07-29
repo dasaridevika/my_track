@@ -1,5 +1,8 @@
 import asyncio
-from crawl4ai import AsyncWebCrawler
+from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
+
+run_config = CrawlerRunConfig()
+
 async def crawl_single_page(url: str):
     async with AsyncWebCrawler() as crawler:
         async with asyncio.timeout(80):
