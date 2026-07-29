@@ -19,6 +19,7 @@ async def crawl_single_page(url: str):
         "media": result.media,
         "metadata": result.metadata,
     }
+
 if __name__ == "__main__":
     async def main():
         data = await crawl_single_page("https://www.geeksforgeeks.org")

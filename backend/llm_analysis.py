@@ -4,11 +4,14 @@ import logging
 import httpx
 import re
 import json
+
 logger = logging.getLogger(__name__)
+
 WORKER_ANALYZE_URL = os.getenv(
     "LLM_ANALYSIS_URL",
     "https://shrill-smoke-7541.devika-worker.workers.dev"
 ).strip()
+
 def extract_text_for_llm(result: dict) -> str:
     if not result or not isinstance(result, dict):
         return ""
@@ -70,9 +73,15 @@ def extract_text_for_llm(result: dict) -> str:
             return "\n\n".join(extracted)
             
     return ""
+
 def clean_text(text: str) -> str:
     if not text:
         return ""
+    if not isinstance(text, str):
+        try:
+            text = str(text)
+        except Exception:
+            return ""
     
     # 1. Remove HTML tags if any are present
     text = re.sub(r'<[^>]+>', '', text)

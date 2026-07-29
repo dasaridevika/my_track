@@ -1,45 +1,37 @@
+"""Generic URL crawler and document extractor.
+
+Supports public HTTP(S) web pages, PDFs, CSV, Excel, DOCX, PPTX, JSON, XML,
+and text files. The web crawler follows same-domain links only.
+"""
+
 import asyncio
-import httpx
 import json
 import logging
 import os
 import tempfile
+from pathlib import Path
 from urllib.parse import urlparse
-import fitz  # PyMuPDF
+
+import fitz
+import httpx
 import pandas as pd
 from docx import Document
-from pptx import Presentation
 from lxml import etree
-from playwright.async_api import async_playwright
-from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
+from pptx import Presentation
+
+from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
 from crawl4ai.content_scraping_strategy import LXMLWebScrapingStrategy
-from crawl4ai.deep_crawling import (
-    BestFirstCrawlingStrategy,
-)
-from crawl4ai.deep_crawling.filters import (
-    FilterChain,
-    ContentTypeFilter,
-)
-from crawl4ai.deep_crawling.scorers import (
-    KeywordRelevanceScorer,
-)
-##########################################################
-# Logging Configuration
-##########################################################
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s"
-)
+from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
+
+try:
+    from storage import is_bucket_configured, make_object_key, upload_file
+except ModuleNotFoundError:
+    from backend.storage import is_bucket_configured, make_object_key, upload_file
+
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 logger = logging.getLogger(__name__)
-def validate_url(url: str):
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https"):
-        raise ValueError("Only HTTP and HTTPS URLs are allowed.")
-    if not parsed.netloc:
-        raise ValueError("Invalid URL.")
-##########################################################
-# Supported File Types
-##########################################################
+
 SUPPORTED_TYPES = {
     ".html": "html",
     ".htm": "html",
@@ -58,428 +50,455 @@ SUPPORTED_TYPES = {
     ".json": "json",
     ".xml": "xml",
 }
-##########################################################
-# Detect File Type Using Playwright
-##########################################################
-async def detect_file_type(url: str):
-    """
-    Detect file type using HTTP HEAD request.
-    Falls back to GET if HEAD is unsupported.
-    Falls back to URL extension if both fail.
-    """
-    try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=15.0) as client:
-            response = await client.head(url)
-            response = await client.get(url,headers={"Range": "bytes=0-0"})
-            content_type = response.headers.get(
-                "content-type",
-                ""
-            ).lower()
-            if "text/html" in content_type:
-                return "html"
-            elif "application/pdf" in content_type:
-                return "pdf"
-            elif "spreadsheet" in content_type:
-                return "excel"
-            elif "excel" in content_type:
-                return "excel"
-            elif "csv" in content_type:
-                return "csv"
-            elif "word" in content_type:
-                return "docx"
-            elif "presentation" in content_type:
-                return "pptx"
-            elif "json" in content_type:
-                return "json"
-            elif "xml" in content_type:
-                return "xml"
-            elif "text/plain" in content_type:
-                return "txt"
-    except Exception as e:
-        logger.warning(f"HTTP detection failed: {e}")
-    extension = os.path.splitext(
-        urlparse(url).path
-    )[1].lower()
-    return SUPPORTED_TYPES.get(extension, "html")
-##########################################################
-# Download File using Playwright API
-##########################################################
-async def download_file(url: str, suffix: str):
-    async with async_playwright() as p:
-        request = await p.request.new_context()
-        request = await p.request.new_context()
-        try:
-            response = await request.get(url,timeout=30000)
-            if not response.ok:
-                raise Exception(f"Unable to download file ({response.status})")
-            temp_file = tempfile.NamedTemporaryFile(delete=False,suffix=suffix)
-            temp_file.write(await response.body())
-            temp_file.close()
-            return temp_file.name
-        finally:
-            await request.dispose()
-        return temp_file.name
-##########################################################
-# Standard Response Builder
-##########################################################
 
-def build_response(success: bool, file_type: str, data=None, message=""):
+
+def build_response(success: bool, file_type: str, data=None, message: str = ""):
     return {
         "success": success,
         "file_type": file_type,
         "message": message,
-        "data": data
+        "data": data,
     }
-async def extract_json(url: str):
-    temp_path = await download_file(url, ".json")
+
+
+def validate_url(url: str) -> None:
+    parsed = urlparse(url.strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("Enter a valid HTTP or HTTPS URL.")
+
+
+def storage_key(file_type: str, url: str, filename: str) -> str:
+    return make_object_key(f"deep-crawl/{file_type}", url, filename)
+
+
+def maybe_upload(local_path: str, file_type: str, url: str, filename: str):
+    if not is_bucket_configured():
+        return None
+    return upload_file(local_path, storage_key(file_type, url, filename))
+
+
+def maybe_upload_json(data: dict, file_type: str, url: str):
+    if not is_bucket_configured():
+        return None
+
+    temp_path = None
     try:
-        with open(temp_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return build_response(
-            True,
-            "json",
-            data
-        )
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".json", mode="w", encoding="utf-8") as handle:
+            json.dump(data, handle, ensure_ascii=False, indent=2, default=str)
+            temp_path = handle.name
+        return upload_file(temp_path, storage_key(file_type, url, "result.json"))
     finally:
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
-async def extract_xml(url: str):
-    temp_path = await download_file(url, ".xml")
+
+
+def file_type_from_content_type(content_type: str) -> str | None:
+    content_type = (content_type or "").lower()
+
+    if "text/html" in content_type:
+        return "html"
+    if "application/pdf" in content_type:
+        return "pdf"
+    if "spreadsheet" in content_type or "excel" in content_type:
+        return "excel"
+    if "text/csv" in content_type:
+        return "csv"
+    if "wordprocessingml" in content_type or "msword" in content_type:
+        return "docx"
+    if "presentationml" in content_type or "powerpoint" in content_type:
+        return "pptx"
+    if "json" in content_type:
+        return "json"
+    if "xml" in content_type:
+        return "xml"
+    if "text/plain" in content_type:
+        return "txt"
+
+    return None
+
+
+async def detect_file_type(url: str) -> str:
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; MyTrackCrawler/1.0)"}
+
     try:
-        tree = etree.parse(temp_path)
-        root = tree.getroot()
+        async with httpx.AsyncClient(follow_redirects=True, timeout=20.0, headers=headers) as client:
+            response = await client.head(url)
+            detected = file_type_from_content_type(response.headers.get("content-type", ""))
+            if detected:
+                return detected
+    except httpx.HTTPError as error:
+        logger.info("HEAD request failed for %s: %s", url, error)
+
+    return SUPPORTED_TYPES.get(Path(urlparse(url).path).suffix.lower(), "html")
+
+
+async def download_file(url: str, suffix: str) -> str:
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; MyTrackCrawler/1.0)"}
+
+    async with httpx.AsyncClient(follow_redirects=True, timeout=90.0, headers=headers) as client:
+        response = await client.get(url)
+        response.raise_for_status()
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as handle:
+            handle.write(response.content)
+            return handle.name
+
+
+async def extract_json(url: str):
+    path = await download_file(url, ".json")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            content = json.load(handle)
+
+        return build_response(
+            True,
+            "json",
+            {
+                "s3": maybe_upload(path, "json", url, "source.json"),
+                "content": content,
+            },
+        )
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
+
+
+async def extract_xml(url: str):
+    path = await download_file(url, ".xml")
+    try:
+        root = etree.parse(path).getroot()
+        content = etree.tostring(root, pretty_print=True, encoding="unicode")
+
         return build_response(
             True,
             "xml",
-            etree.tostring(
-                root,
-                pretty_print=True,
-                encoding="unicode"
-            )
+            {
+                "s3": maybe_upload(path, "xml", url, "source.xml"),
+                "content": content,
+            },
         )
     finally:
-        os.remove(temp_path)
-##########################################################
-# PDF Extraction
-##########################################################
+        if os.path.exists(path):
+            os.remove(path)
+
+
 async def extract_pdf(url: str):
-    logger.info(f"Extracting PDF: {url}")
-    temp_path = None
+    path = await download_file(url, ".pdf")
     try:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-        try:
-            page = await browser.new_page()
-            async with page.expect_download() as download_info:
-                await page.goto(url)
-            download = await download_info.value
-            temp_path = tempfile.mktemp(suffix=".pdf")
-            await download.save_as(temp_path)
-        finally:
-            await browser.close()
-        document = fitz.open(temp_path)
-        pages = []
-        full_text = ""
-        for page_number, page in enumerate(document):
-            text = page.get_text()
-            pages.append({
-                "page": page_number + 1,
-                "text": text
-            })
-            full_text += text + "\n"
-        document.close()
+        with fitz.open(path) as document:
+            pages = [{"page": index + 1, "text": page.get_text()} for index, page in enumerate(document)]
+
         return build_response(
             True,
             "pdf",
             {
+                "s3": maybe_upload(path, "pdf", url, "source.pdf"),
                 "page_count": len(pages),
                 "pages": pages,
-                "text": full_text
-            }
+                "text": "\n".join(page["text"] for page in pages),
+            },
         )
-    except Exception as e:
-        logger.exception(e)
-        return build_response(
-            False,
-            "pdf",
-            None,
-            str(e)
-        )
+    except Exception as error:
+        logger.exception("PDF extraction failed")
+        return build_response(False, "pdf", None, str(error))
     finally:
-        if temp_path and os.path.exists(temp_path):
-            os.remove(temp_path)
-##########################################################
-# Excel Extraction
-##########################################################
+        if os.path.exists(path):
+            os.remove(path)
+
+
 async def extract_excel(url: str):
-    logger.info(f"Extracting Excel: {url}")
-    temp_path = None
+    path = await download_file(url, ".xlsx")
     try:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
-
-            async with page.expect_download() as download_info:
-                await page.goto(url)
-
-            download = await download_info.value
-            temp_path = tempfile.mktemp(suffix=".xlsx")
-            await download.save_as(temp_path)
-            await browser.close()
-        excel = pd.ExcelFile(temp_path)
+        workbook = pd.ExcelFile(path)
         sheets = {}
-        for sheet in excel.sheet_names:
-            df = pd.read_excel(
-                temp_path,
-                sheet_name=sheet
-            )
-            sheets[sheet] = {
-                "rows": len(df),
-                "columns": list(df.columns),
-                "preview": df.head(10).to_dict(
-                    orient="records"
-                )
+
+        for name in workbook.sheet_names:
+            frame = pd.read_excel(path, sheet_name=name)
+            sheets[name] = {
+                "rows": len(frame),
+                "columns": list(frame.columns),
+                "preview": frame.head(10).fillna("").to_dict(orient="records"),
             }
+
         return build_response(
             True,
             "excel",
-            sheets
+            {
+                "s3": maybe_upload(path, "excel", url, "source.xlsx"),
+                "sheets": sheets,
+            },
         )
-    except Exception as e:
-        logger.exception(e)
-        return build_response(
-            False,
-            "excel",
-            None,
-            str(e)
-        )
+    except Exception as error:
+        logger.exception("Excel extraction failed")
+        return build_response(False, "excel", None, str(error))
     finally:
-        if temp_path and os.path.exists(temp_path):
-            os.remove(temp_path)
-##########################################################
-# CSV Extraction
-##########################################################
+        if os.path.exists(path):
+            os.remove(path)
+
+
 async def extract_csv(url: str):
-    temp_path = await download_file(url, ".csv")
+    path = await download_file(url, ".csv")
     try:
-        df = pd.read_csv(temp_path)
+        frame = pd.read_csv(path)
+
         return build_response(
             True,
             "csv",
             {
-                "rows": len(df),
-                "columns": list(df.columns),
-                "preview": df.head(10).to_dict(orient="records")
-            }
+                "s3": maybe_upload(path, "csv", url, "source.csv"),
+                "rows": len(frame),
+                "columns": list(frame.columns),
+                "preview": frame.head(10).fillna("").to_dict(orient="records"),
+            },
         )
+    except Exception as error:
+        logger.exception("CSV extraction failed")
+        return build_response(False, "csv", None, str(error))
     finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-##########################################################
-# DOCX Extraction
-##########################################################
+        if os.path.exists(path):
+            os.remove(path)
+
+
 async def extract_docx(url: str):
-    temp_path = await download_file(url, ".docx")
+    path = await download_file(url, ".docx")
     try:
-        document = Document(temp_path)
-        text = "\n".join(
-            para.text
-            for para in document.paragraphs
-        )
+        document = Document(path)
+        text = "\n".join(paragraph.text for paragraph in document.paragraphs)
+
         return build_response(
             True,
             "docx",
             {
-                "text": text
-            }
+                "s3": maybe_upload(path, "docx", url, "source.docx"),
+                "text": text,
+            },
         )
+    except Exception as error:
+        logger.exception("DOCX extraction failed")
+        return build_response(False, "docx", None, str(error))
     finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-##########################################################
-# PPTX Extraction
-##########################################################
+        if os.path.exists(path):
+            os.remove(path)
+
+
 async def extract_pptx(url: str):
-    temp_path = await download_file(url, ".pptx")
+    path = await download_file(url, ".pptx")
     try:
-        presentation = Presentation(temp_path)
+        presentation = Presentation(path)
         slides = []
-        for slide_number, slide in enumerate(presentation.slides):
-            text = []
-            for shape in slide.shapes:
-                if hasattr(shape, "text"):
-                    text.append(shape.text)
-            slides.append({
-                "slide": slide_number + 1,
-                "text": "\n".join(text)
-            })
+
+        for number, slide in enumerate(presentation.slides, start=1):
+            text = "\n".join(shape.text for shape in slide.shapes if hasattr(shape, "text"))
+            slides.append({"slide": number, "text": text})
+
         return build_response(
             True,
             "pptx",
             {
-                "slides": slides
-            }
+                "s3": maybe_upload(path, "pptx", url, "source.pptx"),
+                "slides": slides,
+            },
         )
+    except Exception as error:
+        logger.exception("PPTX extraction failed")
+        return build_response(False, "pptx", None, str(error))
     finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-##########################################################
-# TXT Extraction
-##########################################################
+        if os.path.exists(path):
+            os.remove(path)
+
+
 async def extract_txt(url: str):
-    temp_path = await download_file(url, ".txt")
+    path = await download_file(url, ".txt")
     try:
-        with open(
-            temp_path,
-            "r",
-            encoding="utf-8",
-            errors="ignore"
-        ) as file:
-            text = file.read()
+        with open(path, encoding="utf-8", errors="ignore") as handle:
+            text = handle.read()
+
         return build_response(
             True,
             "txt",
             {
-                "text": text
-            }
+                "s3": maybe_upload(path, "txt", url, "source.txt"),
+                "text": text,
+            },
         )
+    except Exception as error:
+        logger.exception("TXT extraction failed")
+        return build_response(False, "txt", None, str(error))
     finally:
-        os.remove(temp_path)
-##########################################################
-# HTML / Webpage Extraction using BestFirst Strategy
-##########################################################
+        if os.path.exists(path):
+            os.remove(path)
+
+
+def markdown_text(markdown) -> str:
+    return (
+        getattr(markdown, "fit_markdown", None)
+        or getattr(markdown, "raw_markdown", None)
+        or str(markdown or "")
+    )
+
+
 async def extract_webpage(url: str):
-    logger.info(f"Starting BestFirst crawl for {url}")
+    """Crawl a public website and follow same-domain links."""
+    browser_config = BrowserConfig(headless=True, verbose=False)
 
-    pages = []
+    crawl_config = CrawlerRunConfig(
+        deep_crawl_strategy=BFSDeepCrawlStrategy(
+            max_depth=1,
+            max_pages=10,
+            include_external=False,
+        ),
+        scraping_strategy=LXMLWebScrapingStrategy(),
+        cache_mode=CacheMode.BYPASS,
+        page_timeout=30_000,
+        wait_until="domcontentloaded",
+        verbose=False,
+    )
+
     try:
-        # Prioritize URLs containing these keywords
-        keyword_scorer = KeywordRelevanceScorer(
-            keywords=["news", "press", "media", "news-releases"],
-            weight=0.7
-        )
+        async with asyncio.timeout(90):
+            async with AsyncWebCrawler(config=browser_config) as crawler:
+                results = await crawler.arun(url=url, config=crawl_config)
 
-        # Crawl only HTML pages
-        filter_chain = FilterChain([
-            ContentTypeFilter(allowed_types=["text/html"])
-        ])
+        if not isinstance(results, list):
+            results = [results]
 
-        config = CrawlerRunConfig(
-            deep_crawl_strategy=BestFirstCrawlingStrategy(
-                max_depth=1,      # Crawl root + 1 level deep
-                max_pages=3,      # Keep page count small for fast execution
-                include_external=False,
-                filter_chain=filter_chain,
-                url_scorer=keyword_scorer
-            ),
-            scraping_strategy=LXMLWebScrapingStrategy(),
-            stream=True,          # ENABLE STREAMING so pages are captured immediately as they finish
-            verbose=False,
-            page_timeout=20000    # 20s timeout per individual page
-        )
+        pages = []
+        for result in results:
+            pages.append(
+                {
+                    "url": getattr(result, "url", url),
+                    "title": getattr(result, "title", ""),
+                    "success": getattr(result, "success", False),
+                    "status_code": getattr(result, "status_code", None),
+                    "markdown": markdown_text(getattr(result, "markdown", "")),
+                    "html": getattr(result, "html", ""),
+                    "metadata": getattr(result, "metadata", {}),
+                    "links": getattr(result, "links", {}),
+                    "media": getattr(result, "media", {}),
+                    "error_message": getattr(result, "error_message", None),
+                }
+            )
 
-        # 80-second overall timeout (safe buffer below Render's 100s proxy limit)
-        async with asyncio.timeout(80):
-            async with AsyncWebCrawler() as crawler:
-                # With stream=True, iterate using async for
-                async for result in await crawler.arun(url=url, config=config):
-                    if result and getattr(result, "success", False):
-                        pages.append({
-                            "url": result.url,
-                            "success": result.success,
-                            "title": getattr(result, "title", None),
-                            "score": getattr(result, "metadata", {}).get("score", 0),
-                            "depth": getattr(result, "metadata", {}).get("depth", 0),
-                            "metadata": getattr(result, "metadata", {}),
-                            "markdown": getattr(result, "markdown", None),
-                        })
+        if not pages:
+            return build_response(False, "html", None, "The website returned no crawlable pages.")
+
+        output = {
+            "total_pages": len(pages),
+            "successful_pages": sum(1 for page in pages if page["success"]),
+            "pages": pages,
+        }
 
         return build_response(
-            True,
+            bool(output["successful_pages"]),
             "html",
             {
-                "total_pages": len(pages),
-                "pages": pages
-            }
+                "s3": maybe_upload_json(output, "html", url),
+                **output,
+            },
+            "" if output["successful_pages"] else "The website blocked or failed the crawl.",
         )
 
     except asyncio.TimeoutError:
-        logger.warning(f"Crawl reached execution timeout for {url}")
-        return build_response(
-            True,
-            "html",
-            {
-                "total_pages": len(pages),
-                "pages": pages
-            },
-            message="Crawl reached timeout limit. Returning collected pages."
-        )
-    except Exception as e:
-        logger.exception(e)
-        return build_response(
-            False,
-            "html",
-            None,
-            str(e)
-        )
-##########################################################
-# Universal Extraction Router
-##########################################################
-async def deep_crawl(url: str):
-    try:
-        # Step 1: Validate URL
-        validate_url(url)
+        return build_response(False, "html", None, "Crawl timed out after 90 seconds.")
+    except Exception as error:
+        logger.exception("Web crawl failed for %s", url)
+        return build_response(False, "html", None, str(error))
 
-        # Step 2: Detect File Type
+
+def normalize_deepcrawl_output(raw_result):
+    if not raw_result:
+        return {
+            "success": False,
+            "file_type": "html",
+            "message": "Empty crawl result.",
+            "extracted_data": {
+                "pages": [],
+                "total_pages": 0,
+                "successful_pages": 0,
+                "s3": None,
+            },
+        }
+
+    payload = raw_result.get("data", raw_result)
+
+    pages = (
+        payload.get("pages")
+        or payload.get("results")
+        or payload.get("visited_pages")
+        or []
+    )
+
+    normalized_pages = []
+    for item in pages:
+        normalized_pages.append(
+            {
+                "url": item.get("url"),
+                "title": item.get("title") or item.get("meta_title") or "Untitled",
+                "content": item.get("content") or item.get("text") or item.get("markdown") or "",
+                "markdown": item.get("markdown") or "",
+                "html": item.get("html") or "",
+                "success": item.get("success", False),
+                "status": item.get("status") or item.get("status_code") or 200,
+                "metadata": item.get("metadata", {}),
+                "links": item.get("links", {}),
+                "media": item.get("media", {}),
+                "error_message": item.get("error_message"),
+            }
+        )
+
+    return {
+        "success": raw_result.get("success", False),
+        "file_type": raw_result.get("file_type", "html"),
+        "message": raw_result.get("message", ""),
+        "extracted_data": {
+            "pages": normalized_pages,
+            "total_pages": payload.get("total_pages", len(normalized_pages)),
+            "successful_pages": payload.get(
+                "successful_pages",
+                sum(1 for page in normalized_pages if page.get("success"))
+            ),
+            "s3": payload.get("s3"),
+        },
+    }
+
+
+async def deep_crawl(url: str):
+    """Choose the correct extractor for a public HTTP(S) URL."""
+    try:
+        validate_url(url)
         file_type = await detect_file_type(url)
-        logger.info(f"Detected file type: {file_type}")
-        # Step 3: Route Based on File Type
+
+        extractors = {
+            "html": extract_webpage,
+            "pdf": extract_pdf,
+            "excel": extract_excel,
+            "csv": extract_csv,
+            "docx": extract_docx,
+            "pptx": extract_pptx,
+            "txt": extract_txt,
+            "json": extract_json,
+            "xml": extract_xml,
+        }
+
+        extractor = extractors.get(file_type)
+        if extractor is None:
+            return build_response(False, file_type, None, f"Unsupported file type: {file_type}")
+
+        result = await extractor(url)
 
         if file_type == "html":
-            return await extract_webpage(url)
-        elif file_type == "pdf":
-            return await extract_pdf(url)
-        elif file_type == "excel":
-            return await extract_excel(url)
-        elif file_type == "csv":
-            return await extract_csv(url)
-        elif file_type == "docx":
-            return await extract_docx(url)
-        elif file_type == "pptx":
-            return await extract_pptx(url)
-        elif file_type == "txt":
-            return await extract_txt(url)
-        elif file_type == "json":
-            return await extract_json(url)
-        elif file_type == "xml":
-            return await extract_xml(url)
-        else:
-            return build_response(
-                False,
-                file_type,
-                None,
-                f"Unsupported file type: {file_type}"
-            )
-    except Exception as e:
-        logger.exception(e)
-        return build_response(
-            False,
-            "unknown",
-            None,
-            str(e)
-        )
-##########################################################
-# Main (Testing)
-##########################################################
+            return normalize_deepcrawl_output(result)
+
+        return result
+
+    except Exception as error:
+        logger.exception("Crawl failed")
+        return build_response(False, "unknown", None, str(error))
+
+
 if __name__ == "__main__":
-    TEST_URL = "https://www.geeksforgeeks.org/"
     async def main():
-        result = await deep_crawl(TEST_URL)
-        print(
-            json.dumps(
-                result,
-                indent=4,
-                default=str
-            )
-        )
+        result = await deep_crawl("https://www.geeksforgeeks.org/")
+        print(json.dumps(result, indent=2, default=str))
+
     asyncio.run(main())

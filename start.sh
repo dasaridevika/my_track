@@ -1,17 +1,30 @@
 #!/bin/bash
 set -e
 
+APP_PORT="${PORT:-8501}"
+BACKEND_PORT="${BACKEND_PORT:-8000}"
+
+if [ "$BACKEND_PORT" = "$APP_PORT" ]; then
+  BACKEND_PORT=8001
+fi
+
 export PYTHONPATH="$(pwd)/backend:$(pwd):$PYTHONPATH"
+export API_URL="${API_URL:-http://127.0.0.1:${BACKEND_PORT}/crawl}"
 
-# Start FastAPI backend in background on port 8000
-python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 &
+python -m uvicorn backend.main:app --host 127.0.0.1 --port "$BACKEND_PORT" &
+BACKEND_PID=$!
 
-# Give FastAPI backend a moment to boot
+cleanup() {
+  kill "$BACKEND_PID" 2>/dev/null || true
+}
+trap cleanup EXIT
+
 sleep 3
+echo "Starting Streamlit on port $APP_PORT"
+echo "Backend API URL=$API_URL"
 
-# Start Streamlit frontend on Railway's assigned $PORT with headless flags
 exec streamlit run frontend/app.py \
-  --server.port ${PORT:-8501} \
+  --server.port "$APP_PORT" \
   --server.address 0.0.0.0 \
   --server.headless true \
   --server.enableCORS false \
