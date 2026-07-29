@@ -25,7 +25,7 @@ aptPkgs = [
 [phases.build]
 cmds = [
   "pip install --no-cache-dir -r requirements.txt",
-  "playwright install chromium"
+  "PLAYWRIGHT_BROWSERS_PATH=/app/.bin/ms-playwright playwright install"
 ]
 
 [start]
