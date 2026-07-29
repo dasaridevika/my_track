@@ -74,30 +74,39 @@ if st.button(" Start Crawling", use_container_width=True):
                 st.success("Crawling Completed!")
                 res_data = response.json()
                 data = res_data.get("data", res_data)
-                # ===========================================
-                # Deep Crawl / Dynamic Crawl
-                # ===========================================
-                if method in ["deep", "dynamic"]:
-                    st.subheader("🌐 Crawl Results")
-                    extracted = data.get("extracted_data", data)
-                    pages = extracted.get("pages", [])
-                    if pages:
-                        st.write(
-                            f"**Total Pages Crawled:** {extracted.get('total_pages', len(pages))}"
-                        )
-                        for i, page in enumerate(pages, start=1):
-                            st.markdown(f"### 📄 Page {i}")
-                            st.write(f"**URL:** {page.get('url')}")
-                            st.write(f"**Success:** {page.get('success')}")
-                            if page.get("metadata"):
-                                with st.expander(f"Metadata - Page {i}"):
-                                    st.json(page["metadata"])
-                            if page.get("markdown"):
-                                with st.expander(f"Markdown Preview - Page {i}"):
-                                    st.markdown(page["markdown"])
-                            st.divider()
+               # ===========================================
+               # Deep Crawl / Dynamic Crawl
+               # ===========================================
+               if method in ["deep", "dynamic"]:
+                   st.subheader("🌐 Crawl Results")
+                   extracted = data.get("extracted_data", data)
+                   pages = (
+                    extracted.get("pages")
+                    or extracted.get("results")
+                    or extracted.get("crawl_results")
+                    or extracted.get("visited_pages")
+                    or []
+                    )
+                   if isinstance(pages, dict):
+                        pages = pages.get("pages", [])
+                   if pages:
+                        st.write(f"**Total Pages Crawled:** {extracted.get('total_pages', len(pages))}")
+                        for i, page in enumerate(pages, 1):
+                            with st.expander(f"Page {i}: {page.get('url', 'No URL')}"):
+                                st.write(f"**Title:** {page.get('title', 'N/A')}")
+                                st.write(f"**URL:** {page.get('url', 'N/A')}")
+                                st.write(f"**Status:** {page.get('status', 'N/A')}")
+                                content = (
+                                    page.get("content")
+                                    or page.get("text")
+                                    or page.get("markdown")
+                                    or page.get("html")
+                                    or "No content found."
+                                    )
+                                st.text_area("Content", content, height=250)
                     else:
                         st.warning("No pages were returned.")
+                        st.json(data)
                 # ===========================================
                 # Snapshot
                 # ===========================================
