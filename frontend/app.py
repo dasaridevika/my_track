@@ -16,18 +16,156 @@ st.set_page_config(
 # -----------------------------
 # Backend API URL
 # -----------------------------
-API_URL = os.getenv(
-    "API_URL",
-    "http://127.0.0.1:8000/crawl"
-)
+API_URL = os.getenv("API_URL", "http://127.0.0.1:8000/crawl")
 PDF_UPLOAD_URL = os.getenv(
     "PDF_UPLOAD_URL",
     f"{API_URL.rstrip('/').rsplit('/', 1)[0]}/pdf/upload",
 )
+MAX_PDF_UPLOAD_BYTES = 50 * 1024 * 1024
 
 
 def url_looks_like_pdf(url: str) -> bool:
     return urlparse(url.strip()).path.lower().endswith(".pdf")
+
+def post_pdf_upload(uploaded_file):
+    """Send a locally selected PDF to the backend's existing upload route."""
+    file_bytes = uploaded_file.getvalue()
+    if len(file_bytes) > MAX_PDF_UPLOAD_BYTES:
+        raise ValueError("PDF is too large. The upload limit is 50 MB.")
+
+    return requests.post(
+        PDF_UPLOAD_URL,
+        files={
+            "file": (
+                uploaded_file.name,
+                file_bytes,
+                uploaded_file.type or "application/pdf",
+            )
+        },
+        timeout=300,
+    )
+
+
+def render_analysis(analysis: dict | None):
+    if not analysis:
+        return
+
+    if analysis.get("error"):
+        st.warning(f"LLM analysis failed: {analysis['error']}")
+        return
+
+    st.subheader("LLM Analysis")
+    if summary := analysis.get("summary"):
+        st.write(summary)
+
+    for label, key in (
+        ("Topics", "topics"),
+        ("Keywords", "keywords"),
+        ("Important points", "important_points"),
+        ("Action items", "action_items"),
+    ):
+        values = analysis.get(key, [])
+        if values:
+            st.markdown(f"**{label}:**")
+            for value in values:
+                st.write(f"- {value}")
+
+
+st.title("PDF Extraction and Analysis")
+st.caption("Enter a public PDF URL or drag and drop a local PDF when the URL is blocked.")
+
+url = st.text_input("PDF URL (optional)", placeholder="https://example.com/document.pdf")
+method = st.selectbox("Extraction method", ["single", "pdf"], index=0)
+
+# The uploader is visible both for explicit PDF extraction and for direct PDF
+# URLs. After a failed URL request the session-state flag exposes it as well.
+show_uploader = (
+    method == "pdf"
+    or url_looks_like_pdf(url)
+    or st.session_state.get("show_pdf_uploader", False)
+)
+
+uploaded_pdf = None
+if show_uploader:
+    if failure_message := st.session_state.get("pdf_url_failure"):
+        st.warning(f"The URL could not be extracted: {failure_message}")
+        st.info("Drag and drop the PDF below, then click Extract PDF.")
+
+    uploaded_pdf = st.file_uploader(
+        "Upload PDF",
+        type=["pdf"],
+        help="Drag a PDF here or browse files from your device (50 MB maximum).",
+    )
+
+extract = st.button("Extract PDF", type="primary", use_container_width=True)
+
+if extract:
+    if uploaded_pdf is None and not url.strip():
+        st.warning("Enter a PDF URL or upload a local PDF.")
+        st.stop()
+
+    try:
+        request_method = "pdf" if url_looks_like_pdf(url) else method
+        if uploaded_pdf is not None:
+            with st.spinner("Uploading, extracting, and analyzing the PDF..."):
+                response = post_pdf_upload(uploaded_pdf)
+            # The selected local file is now the active source; clear any
+            # previous URL failure message for the next interaction.
+            st.session_state.pop("show_pdf_uploader", None)
+            st.session_state.pop("pdf_url_failure", None)
+        else:
+            with st.spinner("Downloading, extracting, and analyzing the PDF..."):
+                response = requests.post(
+                    API_URL,
+                    json={"url": url.strip(), "method": request_method},
+                    timeout=300,
+                )
+
+        if response.status_code != 200:
+            st.error(f"Backend request failed ({response.status_code}).")
+            st.code(response.text)
+            st.stop()
+
+        payload = response.json()
+        data = payload.get("data", payload)
+        extracted = data.get("extracted_data", data)
+        succeeded = data.get("success", extracted.get("success", False))
+        response_method = data.get("method", method)
+
+        if not succeeded:
+            error = extracted.get("error", "The PDF could not be extracted.")
+            # This is the URL-to-upload fallback. Rerunning makes the
+            # drag-and-drop control visible immediately, including when the
+            # original request used the default "single" method.
+            if uploaded_pdf is None and request_method == "pdf":
+                st.session_state["show_pdf_uploader"] = True
+                st.session_state["pdf_url_failure"] = error
+                st.rerun()
+
+            st.error(error)
+            st.stop()
+
+        st.success("PDF extraction completed.")
+        st.metric("Pages extracted", extracted.get("page_count", 0))
+        if download := extracted.get("download"):
+            st.caption(f"Download method: {download.get('download_method', 'unknown')}")
+
+        if text := extracted.get("markdown"):
+            st.subheader("Extracted text")
+            st.text_area("PDF content", text, height=360, disabled=True)
+        else:
+            st.warning("No selectable text was found. This may be a scanned PDF that needs OCR.")
+
+        render_analysis(data.get("llm_analysis"))
+
+    except requests.exceptions.Timeout:
+        st.error("The backend timed out while processing the PDF.")
+    except requests.exceptions.ConnectionError:
+        st.error("Cannot reach the backend. Confirm that it is running.")
+    except ValueError as error:
+        st.error(str(error))
+    except Exception as error:
+        st.error(f"Unexpected error: {error}")
 
 # -----------------------------
 # Premium Styling Enforced Dark Theme
