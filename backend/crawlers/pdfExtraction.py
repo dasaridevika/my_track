@@ -6,7 +6,7 @@ import shutil
 import tempfile
 import uuid
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import fitz
 import httpx
@@ -41,7 +41,36 @@ PDF_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
-PDF_EXTRACTOR_VERSION = "direct-v3-range-browser"
+PDF_EXTRACTOR_VERSION = "direct-v4-browser-discovery"
+
+
+def is_pdf_content(content: bytes) -> bool:
+    """Validate by signature because many servers send PDFs as octet-stream."""
+    return content.lstrip().startswith(b"%PDF")
+
+
+def is_pdf_response(content_type: str, content: bytes) -> bool:
+    return "pdf" in (content_type or "").lower() or is_pdf_content(content)
+
+
+def save_pdf_response(response, destination: Path, download_method: str, content=None, **extra):
+    content = response.content if content is None else content
+    content_type = response.headers.get("content-type", "").lower()
+    if not is_pdf_content(content):
+        preview = content[:200].decode("utf-8", errors="replace")
+        raise ValueError(
+            "URL did not return a valid PDF. "
+            f"content_type={content_type or 'unknown'}, bytes={len(content)}, preview={preview!r}"
+        )
+
+    destination.write_bytes(content)
+    return {
+        "content_type": content_type or "application/pdf",
+        "bytes": len(content),
+        "final_url": str(response.url),
+        "download_method": download_method,
+        **extra,
+    }
 
 
 def upload_or_report(local_path: str, category: str, url: str, filename: str):
@@ -103,24 +132,12 @@ async def download_pdf(url: str, destination: Path):
                 return await download_pdf_with_browser(url, destination)
             raise
 
-    content_type = response.headers.get("content-type", "").lower()
-    content = response.content
-    is_pdf = content.lstrip().startswith(b"%PDF")
+    if not is_pdf_content(response.content):
+        # A URL can be a journal/repository landing page rather than the PDF
+        # itself.  Let the browser discover the document it embeds or links to.
+        return await download_pdf_with_browser(url, destination)
 
-    if not is_pdf:
-        preview = content[:200].decode("utf-8", errors="replace")
-        raise ValueError(
-            "URL did not return a valid PDF. "
-            f"content_type={content_type or 'unknown'}, bytes={len(content)}, preview={preview!r}"
-        )
-
-    destination.write_bytes(content)
-    return {
-        "content_type": content_type or "application/pdf",
-        "bytes": len(content),
-        "final_url": str(response.url),
-        "download_method": "httpx",
-    }
+    return save_pdf_response(response, destination, "httpx")
 
 
 async def download_pdf_with_range_request(
@@ -151,7 +168,7 @@ async def download_pdf_with_range_request(
     content = response.content
     content_type = response.headers.get("content-type", "").lower()
 
-    if not content.lstrip().startswith(b"%PDF"):
+    if not is_pdf_content(content):
         preview = content[:200].decode("utf-8", errors="replace")
         logger.warning(
             "Range PDF retry returned non-PDF content_type=%s bytes=%s preview=%r",
@@ -161,17 +178,22 @@ async def download_pdf_with_range_request(
         )
         return None
 
-    destination.write_bytes(content)
-    return {
-        "content_type": content_type or "application/pdf",
-        "bytes": len(content),
-        "final_url": str(response.url),
-        "download_method": "httpx-range",
-        "recovered_from_status": blocked_status,
-    }
+    return save_pdf_response(
+        response,
+        destination,
+        "httpx-range",
+        recovered_from_status=blocked_status,
+    )
 
 
 async def download_pdf_with_browser(url: str, destination: Path):
+    """Download a direct PDF or discover one from an accessible landing page.
+
+    ``context.request`` shares the browser's cookies, but it is still not a
+    navigation.  Some repositories enforce navigation/referrer checks, so we
+    first load the URL in a real page and then use the warmed session for any
+    PDF links or embedded viewers found there.
+    """
     parsed = urlparse(url)
     origin = f"{parsed.scheme}://{parsed.netloc}/" if parsed.scheme and parsed.netloc else None
 
@@ -198,35 +220,67 @@ async def download_pdf_with_browser(url: str, destination: Path):
                 except Exception as warmup_error:
                     logger.warning("PDF browser warmup failed: %s", warmup_error)
 
-            response = await context.request.get(
-                url,
-                headers={
-                    **PDF_HEADERS,
-                    "Referer": origin or url,
-                },
-                timeout=120000,
+            navigation = None
+            try:
+                navigation = await page.goto(url, wait_until="domcontentloaded", timeout=120000)
+            except Exception as navigation_error:
+                # A browser may report ERR_ABORTED for an attachment download;
+                # the context request below can still retrieve it with cookies.
+                logger.info("PDF browser navigation did not complete: %s", navigation_error)
+            if navigation and navigation.ok:
+                content = await navigation.body()
+                if is_pdf_response(navigation.headers.get("content-type", ""), content):
+                    return save_pdf_response(
+                        navigation,
+                        destination,
+                        "playwright-navigation",
+                        content=content,
+                    )
+
+            candidate_urls = await page.evaluate(
+                """() => [...new Set([
+                    ...[...document.querySelectorAll('a[href], iframe[src], embed[src], object[data]')]
+                        .map(node => node.href || node.src || node.data)
+                        .filter(Boolean),
+                    ...[...document.querySelectorAll('[data-pdf], [data-url]')]
+                        .map(node => node.dataset.pdf || node.dataset.url)
+                        .filter(Boolean),
+                ])]"""
+            )
+            candidates = [url]
+            candidates.extend(
+                urljoin(page.url, candidate)
+                for candidate in candidate_urls
+                if ".pdf" in candidate.lower() or "pdf" in candidate.lower()
             )
 
-            if not response.ok:
-                raise ValueError(f"Browser PDF download failed with HTTP {response.status}.")
-
-            content = await response.body()
-            content_type = (response.headers.get("content-type") or "").lower()
-
-            if not content.lstrip().startswith(b"%PDF"):
-                preview = content[:200].decode("utf-8", errors="replace")
-                raise ValueError(
-                    "Browser fallback did not return a valid PDF. "
-                    f"content_type={content_type or 'unknown'}, bytes={len(content)}, preview={preview!r}"
+            failures = []
+            for candidate in dict.fromkeys(candidates):
+                response = await context.request.get(
+                    candidate,
+                    headers={**PDF_HEADERS, "Referer": page.url or origin or url},
+                    timeout=120000,
                 )
+                if not response.ok:
+                    failures.append(f"{response.status} {candidate}")
+                    continue
+                content = await response.body()
+                if is_pdf_response(response.headers.get("content-type", ""), content):
+                    return save_pdf_response(
+                        response,
+                        destination,
+                        "playwright-session",
+                        content=content,
+                    )
+                failures.append(f"non-PDF {candidate}")
 
-            destination.write_bytes(content)
-            return {
-                "content_type": content_type or "application/pdf",
-                "bytes": len(content),
-                "final_url": response.url,
-                "download_method": "playwright",
-            }
+            status = navigation.status if navigation else "no response"
+            attempted = "; ".join(failures[:3]) or "no PDF links were found"
+            raise ValueError(
+                "PDF access was denied or the page does not expose a downloadable PDF "
+                f"(navigation status: {status}; attempts: {attempted}). "
+                "Use a public direct PDF URL or provide the required authenticated session."
+            )
         finally:
             await context.close()
             await browser.close()
