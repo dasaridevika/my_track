@@ -295,7 +295,42 @@ st.markdown(
         --danger: #ef4444;
         --warning: #f59e0b;
     }
+    a[kind="primary"],
+a[kind="secondary"],
+a[kind="tertiary"] {
+    background: linear-gradient(135deg, #38bdf8 0%, #60a5fa 100%) !important;
+    color: #000000 !important;
+    border: none !important;
+    border-radius: 12px !important;
+    font-weight: 700 !important;
+    box-shadow: 0 4px 14px rgba(56, 189, 248, 0.25) !important;
+    text-decoration: none !important;
+}
 
+a[kind="primary"]:hover,
+a[kind="secondary"]:hover,
+a[kind="tertiary"]:hover,
+a[kind="primary"]:focus,
+a[kind="secondary"]:focus,
+a[kind="tertiary"]:focus,
+a[kind="primary"]:active,
+a[kind="secondary"]:active,
+a[kind="tertiary"]:active,
+a[kind="primary"]:visited,
+a[kind="secondary"]:visited,
+a[kind="tertiary"]:visited {
+    color: #000000 !important;
+    -webkit-text-fill-color: #000000 !important;
+    text-decoration: none !important;
+    filter: brightness(1.02);
+}
+
+a[kind="primary"] *,
+a[kind="secondary"] *,
+a[kind="tertiary"] * {
+    color: #000000 !important;
+    -webkit-text-fill-color: #000000 !important;
+}
     .stApp {
         background: var(--bg-main) !important;
         color: var(--text-main) !important;
