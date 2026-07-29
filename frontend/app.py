@@ -1,13 +1,14 @@
 import os
 import streamlit as st
 import requests
+import json
 
 # -----------------------------
 # Page Configuration
 # -----------------------------
 st.set_page_config(
     page_title="Crawl4AI Web Scraper",
-    page_icon="🕷️",
+    page_icon="C",
     layout="wide"
 )
 
@@ -226,7 +227,7 @@ st.markdown("""
 # -----------------------------
 # Header Layout
 # -----------------------------
-st.markdown('<div class="main-title">🕷️ Crawl4AI AI-Scraper</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-title">Crawl4AI Developer Scraper</div>', unsafe_allow_html=True)
 st.markdown('<div class="subtitle">Extract and auto-summarize web content with zero-boilerplate context cleaning</div>', unsafe_allow_html=True)
 
 # -----------------------------
@@ -236,7 +237,7 @@ col1, col2 = st.columns([1, 2], gap="large")
 
 with col1:
     st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.subheader("🎯 Extraction Target")
+    st.subheader("Extraction Target")
     url = st.text_input("Website URL", placeholder="https://example.com")
     method = st.selectbox(
         "Extraction Method",
@@ -257,7 +258,7 @@ with col2:
                 "method": method
             }
             try:
-                with st.spinner("🕷️ Crawling web pages and analyzing context... Please wait..."):
+                with st.spinner("Crawling web pages and analyzing context... Please wait..."):
                     response = requests.post(
                         API_URL,
                         json=payload,
@@ -269,18 +270,78 @@ with col2:
                     data = res_data.get("data", res_data)
                     llm_analysis = data.get("llm_analysis")
                     
-                    st.toast("Extraction completed successfully!", icon="✅")
+                    st.toast("Extraction completed successfully!")
                     
-                    # Display Results
-                    if method == "snapshot":
-                        # Snapshot method: Show download options & files
+                    # 1. SPECIAL INTERFACES FOR STRUCTURAL EXTRACTION (css, xpath, regex)
+                    if method in ["css", "xpath", "regex"]:
+                        extracted_data = data.get("extracted_data", {})
+                        extracted_content = extracted_data.get("extracted_content")
+                        if not extracted_content:
+                            extracted_content = data.get("extracted_content")
+                            
+                        parsed_content = None
+                        if isinstance(extracted_content, str):
+                            try:
+                                parsed_content = json.loads(extracted_content)
+                            except Exception:
+                                pass
+                        elif isinstance(extracted_content, (dict, list)):
+                            parsed_content = extracted_content
+                            
                         st.markdown('<div class="card">', unsafe_allow_html=True)
-                        st.subheader("📸 Page Snapshot Result")
+                        st.subheader("Extracted Content")
+                        
+                        if isinstance(parsed_content, list) and parsed_content and isinstance(parsed_content[0], dict):
+                            st.dataframe(parsed_content, use_container_width=True)
+                        elif parsed_content:
+                            st.json(parsed_content)
+                        elif extracted_content:
+                            st.code(extracted_content)
+                        else:
+                            st.info("No content matched the selection criteria.")
+                            
+                        st.markdown('</div>', unsafe_allow_html=True)
+
+                    # 2. SPECIAL INTERFACES FOR MULTI-PAGE CRAWLS (dynamic, deep)
+                    elif method in ["dynamic", "deep"]:
+                        pages = []
+                        if method == "dynamic":
+                            pages = data.get("pages", [])
+                        elif method == "deep":
+                            extracted_data = data.get("extracted_data", {})
+                            pages = extracted_data.get("pages", [])
+                            
+                        if pages:
+                            st.markdown('<div class="card">', unsafe_allow_html=True)
+                            st.subheader("Crawl Overview")
+                            
+                            col_m1, col_m2 = st.columns(2)
+                            with col_m1:
+                                st.metric("Total Pages Crawled", len(pages))
+                            with col_m2:
+                                success_count = sum(1 for p in pages if p.get("success", False))
+                                st.metric("Successful Pages", success_count)
+                                
+                            page_table = [
+                                {
+                                    "URL": p.get("url"), 
+                                    "Title": p.get("title") or "Untitled", 
+                                    "Status": "Success" if p.get("success") else "Failed"
+                                } 
+                                for p in pages
+                            ]
+                            st.dataframe(page_table, use_container_width=True)
+                            st.markdown('</div>', unsafe_allow_html=True)
+
+                    # 3. SPECIAL INTERFACE FOR SNAPSHOT
+                    elif method == "snapshot":
+                        st.markdown('<div class="card">', unsafe_allow_html=True)
+                        st.subheader("Page Snapshot Result")
                         extracted = data.get("extracted_data", data)
                         files = extracted.get("files", {})
                         
-                        st.write(f"**URL:** {extracted.get('url')}")
-                        st.write(f"**Status:** {'Success' if extracted.get('success') else 'Failed'}")
+                        st.write(f"URL: {extracted.get('url')}")
+                        st.write(f"Status: {'Success' if extracted.get('success') else 'Failed'}")
                         
                         col_shot, col_pdf, col_mhtml = st.columns(3)
                         with col_shot:
@@ -309,11 +370,11 @@ with col2:
                                     st.info(f"Saved: {mhtml.get('local_path')}")
                         
                         st.markdown('</div>', unsafe_allow_html=True)
-                        
-                    elif llm_analysis:
-                        # Display clean premium AI Summary dashboard
+
+                    # AI SUMMARY DASHBOARD
+                    if llm_analysis:
                         st.markdown('<div class="card summary-card">', unsafe_allow_html=True)
-                        st.subheader("📝 Executive Summary")
+                        st.subheader("Executive Summary")
                         summary = llm_analysis.get("summary", "")
                         if summary:
                             st.write(summary)
@@ -321,28 +382,24 @@ with col2:
                             st.info("No executive summary found in response.")
                         st.markdown('</div>', unsafe_allow_html=True)
                         
-                        # Columns for Sentiment, Topics, Keywords
                         col_info1, col_info2 = st.columns(2)
                         
                         with col_info1:
                             st.markdown('<div class="card">', unsafe_allow_html=True)
-                            st.subheader("📊 Sentiment Analysis")
+                            st.subheader("Sentiment Analysis")
                             sentiment = llm_analysis.get("sentiment", "neutral").lower()
                             
-                            emoji = "😐"
                             class_name = "sentiment-neutral"
                             if "positive" in sentiment or "good" in sentiment:
-                                emoji = "😊"
                                 class_name = "sentiment-positive"
                             elif "negative" in sentiment or "bad" in sentiment:
-                                emoji = "😡"
                                 class_name = "sentiment-negative"
                                 
-                            st.markdown(f'<span class="sentiment-tag {class_name}">{emoji} {sentiment}</span>', unsafe_allow_html=True)
+                            st.markdown(f'<span class="sentiment-tag {class_name}">{sentiment}</span>', unsafe_allow_html=True)
                             st.markdown('</div>', unsafe_allow_html=True)
                             
                             st.markdown('<div class="card">', unsafe_allow_html=True)
-                            st.subheader("🏷️ Topics")
+                            st.subheader("Topics")
                             topics = llm_analysis.get("topics", [])
                             if isinstance(topics, list) and topics:
                                 topic_badges = "".join([f'<span class="badge">{topic}</span>' for topic in topics])
@@ -353,7 +410,7 @@ with col2:
                             
                         with col_info2:
                             st.markdown('<div class="card">', unsafe_allow_html=True)
-                            st.subheader("🔑 Keywords")
+                            st.subheader("Keywords")
                             keywords = llm_analysis.get("keywords", [])
                             if isinstance(keywords, list) and keywords:
                                 keyword_badges = "".join([f'<span class="badge keyword-badge">{keyword}</span>' for keyword in keywords])
@@ -362,9 +419,8 @@ with col2:
                                 st.info("No keywords extracted.")
                             st.markdown('</div>', unsafe_allow_html=True)
                             
-                        # Important points & Action items
                         st.markdown('<div class="card">', unsafe_allow_html=True)
-                        st.subheader("📌 Important Takeaways")
+                        st.subheader("Important Takeaways")
                         points = llm_analysis.get("important_points", [])
                         if isinstance(points, list) and points:
                             bullets = "".join([f'<li class="bullet-item">{pt}</li>' for pt in points])
@@ -376,19 +432,18 @@ with col2:
                         action_items = llm_analysis.get("action_items", [])
                         if isinstance(action_items, list) and action_items:
                             st.markdown('<div class="card">', unsafe_allow_html=True)
-                            st.subheader("✅ Recommended Actions")
+                            st.subheader("Recommended Actions")
                             for idx, item in enumerate(action_items):
                                 st.checkbox(item, key=f"action_{idx}")
                             st.markdown('</div>', unsafe_allow_html=True)
                             
-                    else:
-                        # Fallback when LLM analysis was skipped or not returned
+                    elif method != "snapshot":
                         st.markdown('<div class="card">', unsafe_allow_html=True)
                         st.warning("No AI summary analysis was generated for this method or site.")
                         st.markdown('</div>', unsafe_allow_html=True)
                         
                     # Collapsible debug section
-                    with st.expander("🔧 Debug: Raw Crawl Metadata"):
+                    with st.expander("Debug: Raw Crawl Metadata"):
                         st.json(data)
                         
                 else:
@@ -399,16 +454,15 @@ with col2:
                         st.text(response.text)
                         
             except requests.exceptions.Timeout:
-                st.error("⏳ Connection timed out. The backend is taking too long to respond.")
+                st.error("Connection timed out. The backend is taking too long to respond.")
             except requests.exceptions.ConnectionError:
-                st.error("🔌 Unable to connect to the backend server. Please verify it is running on port 8000.")
+                st.error("Unable to connect to the backend server. Please verify it is running on port 8000.")
             except Exception as e:
                 st.error(f"Unexpected error occurred: {e}")
     else:
         # Default placeholder panel
         st.markdown("""
         <div class="card" style="text-align: center; padding: 60px 40px; border-style: dashed; border-width: 2px;">
-            <div style="font-size: 4rem; margin-bottom: 20px;">🕷️</div>
             <h2>Ready to extract content</h2>
             <p style="color: rgba(255, 255, 255, 0.5);">Enter a URL and select an extraction method on the left to begin.</p>
         </div>
