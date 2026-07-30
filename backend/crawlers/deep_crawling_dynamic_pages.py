@@ -29,7 +29,45 @@ def get_markdown_text(markdown) -> str:
     )
 
 
+def extract_clean_links(raw_links) -> dict:
+    if not raw_links:
+        return {"internal": [], "external": [], "total_count": 0}
+    clean_internal = []
+    clean_external = []
+    seen = set()
+
+    if isinstance(raw_links, dict):
+        internal_list = raw_links.get("internal", []) or []
+        external_list = raw_links.get("external", []) or []
+        for item in internal_list:
+            href = item.get("href", "") if isinstance(item, dict) else str(item or "")
+            text = item.get("text", "") if isinstance(item, dict) else href
+            if href and href not in seen:
+                seen.add(href)
+                clean_internal.append({"href": href, "text": text or href, "type": "internal"})
+        for item in external_list:
+            href = item.get("href", "") if isinstance(item, dict) else str(item or "")
+            text = item.get("text", "") if isinstance(item, dict) else href
+            if href and href not in seen:
+                seen.add(href)
+                clean_external.append({"href": href, "text": text or href, "type": "external"})
+    elif isinstance(raw_links, list):
+        for item in raw_links:
+            href = item.get("href", "") if isinstance(item, dict) else str(item or "")
+            text = item.get("text", "") if isinstance(item, dict) else href
+            if href and href not in seen:
+                seen.add(href)
+                clean_internal.append({"href": href, "text": text or href, "type": "internal"})
+
+    return {
+        "internal": clean_internal,
+        "external": clean_external,
+        "total_count": len(clean_internal) + len(clean_external),
+    }
+
+
 async def deep_crawl_bfs(
+
     url: str,
     categories: Optional[List[str]] = None,
     max_depth: int = 1,
@@ -125,24 +163,34 @@ async def deep_crawl_bfs(
                     url=url,
                     config=crawler_config,
                 )
-
         if not isinstance(results, list):
             results = [results]
 
         pages = []
+        all_links_list = []
+        seen_all_links = set()
+
         for page in results:
             url_val = getattr(page, "url", url)
             success_val = getattr(page, "success", False)
             md_raw = get_markdown_text(getattr(page, "markdown", None))
-            
+            parsed_links = extract_clean_links(getattr(page, "links", {}))
+
+            for l in parsed_links["internal"] + parsed_links["external"]:
+                if l["href"] not in seen_all_links:
+                    seen_all_links.add(l["href"])
+                    all_links_list.append(l)
+
             pages.append({
                 "url": url_val,
                 "title": getattr(page, "title", "") or "Dynamic Page",
                 "success": success_val,
                 "markdown": md_raw,
                 "content": md_raw,
+                "links": parsed_links,
                 "metadata": getattr(page, "metadata", {}),
             })
+
 
         return {
             "success": True,
@@ -150,8 +198,11 @@ async def deep_crawl_bfs(
             "categories": cleaned_categories,
             "total_pages": len(pages),
             "successful_pages": sum(1 for p in pages if p["success"]),
+            "all_links": all_links_list,
+            "total_links_found": len(all_links_list),
             "pages": pages,
         }
+
 
     except asyncio.TimeoutError:
         logger.error(f"Dynamic crawl timed out for {url}")

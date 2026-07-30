@@ -19,6 +19,43 @@ browser_config = BrowserConfig(
 
 
 
+def extract_clean_links(raw_links) -> dict:
+    if not raw_links:
+        return {"internal": [], "external": [], "total_count": 0}
+    clean_internal = []
+    clean_external = []
+    seen = set()
+
+    if isinstance(raw_links, dict):
+        internal_list = raw_links.get("internal", []) or []
+        external_list = raw_links.get("external", []) or []
+        for item in internal_list:
+            href = item.get("href", "") if isinstance(item, dict) else str(item or "")
+            text = item.get("text", "") if isinstance(item, dict) else href
+            if href and href not in seen:
+                seen.add(href)
+                clean_internal.append({"href": href, "text": text or href, "type": "internal"})
+        for item in external_list:
+            href = item.get("href", "") if isinstance(item, dict) else str(item or "")
+            text = item.get("text", "") if isinstance(item, dict) else href
+            if href and href not in seen:
+                seen.add(href)
+                clean_external.append({"href": href, "text": text or href, "type": "external"})
+    elif isinstance(raw_links, list):
+        for item in raw_links:
+            href = item.get("href", "") if isinstance(item, dict) else str(item or "")
+            text = item.get("text", "") if isinstance(item, dict) else href
+            if href and href not in seen:
+                seen.add(href)
+                clean_internal.append({"href": href, "text": text or href, "type": "internal"})
+
+    return {
+        "internal": clean_internal,
+        "external": clean_external,
+        "total_count": len(clean_internal) + len(clean_external),
+    }
+
+
 async def crawl_single_page(url: str, **kwargs):
     try:
         async with AsyncWebCrawler(config=browser_config) as crawler:
@@ -30,15 +67,19 @@ async def crawl_single_page(url: str, **kwargs):
         md = getattr(result, "markdown", "")
         if hasattr(md, "fit_markdown"):
             md = md.fit_markdown or md.raw_markdown or str(md)
+
+        cleaned_links = extract_clean_links(getattr(result, "links", {}))
+
         return {
             "success": getattr(result, "success", False),
             "url": url,
             "markdown": str(md or ""),
             "html": getattr(result, "html", ""),
-            "links": getattr(result, "links", {}),
+            "links": cleaned_links,
             "media": getattr(result, "media", {}),
             "metadata": getattr(result, "metadata", {}),
         }
+
     except asyncio.TimeoutError:
         return {
             "success": False,
