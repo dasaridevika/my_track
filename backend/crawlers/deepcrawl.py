@@ -17,7 +17,9 @@ import httpx
 import pandas as pd
 from docx import Document
 from lxml import etree
+from bs4 import BeautifulSoup
 from pptx import Presentation
+
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
 from crawl4ai.content_scraping_strategy import LXMLWebScrapingStrategy
@@ -37,8 +39,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(
 logger = logging.getLogger(__name__)
 
 
-def extract_clean_links(raw_links) -> dict:
-    if not raw_links:
+def extract_clean_links(raw_links, html_content: str = "", base_url: str = "") -> dict:
+    if not raw_links and not html_content:
         return {"internal": [], "external": [], "total_count": 0}
 
     clean_internal = []
@@ -67,6 +69,18 @@ def extract_clean_links(raw_links) -> dict:
             if href and href not in seen:
                 seen.add(href)
                 clean_internal.append({"href": href, "text": text or href, "type": "internal"})
+
+    if html_content and isinstance(html_content, str):
+        try:
+            soup = BeautifulSoup(html_content, "html.parser")
+            for a_tag in soup.find_all("a", href=True):
+                href = a_tag.get("href", "").strip()
+                if href and href not in seen and not href.startswith("javascript:") and not href.startswith("#"):
+                    seen.add(href)
+                    text = a_tag.get_text(strip=True) or href
+                    clean_internal.append({"href": href, "text": text, "type": "internal"})
+        except Exception:
+            pass
 
     return {
         "internal": clean_internal,

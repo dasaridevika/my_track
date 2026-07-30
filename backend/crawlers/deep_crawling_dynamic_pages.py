@@ -3,6 +3,8 @@ import asyncio
 import logging
 from urllib.parse import urlparse
 from typing import Optional, List, Dict, Any
+from bs4 import BeautifulSoup
+
 
 from crawl4ai import (
     AsyncWebCrawler,
@@ -30,8 +32,8 @@ def get_markdown_text(markdown) -> str:
     )
 
 
-def extract_clean_links(raw_links) -> dict:
-    if not raw_links:
+def extract_clean_links(raw_links, html_content: str = "", base_url: str = "") -> dict:
+    if not raw_links and not html_content:
         return {"internal": [], "external": [], "total_count": 0}
     clean_internal = []
     clean_external = []
@@ -60,11 +62,24 @@ def extract_clean_links(raw_links) -> dict:
                 seen.add(href)
                 clean_internal.append({"href": href, "text": text or href, "type": "internal"})
 
+    if html_content and isinstance(html_content, str):
+        try:
+            soup = BeautifulSoup(html_content, "html.parser")
+            for a_tag in soup.find_all("a", href=True):
+                href = a_tag.get("href", "").strip()
+                if href and href not in seen and not href.startswith("javascript:") and not href.startswith("#"):
+                    seen.add(href)
+                    text = a_tag.get_text(strip=True) or href
+                    clean_internal.append({"href": href, "text": text, "type": "internal"})
+        except Exception:
+            pass
+
     return {
         "internal": clean_internal,
         "external": clean_external,
         "total_count": len(clean_internal) + len(clean_external),
     }
+
 
 
 async def deep_crawl_bfs(
