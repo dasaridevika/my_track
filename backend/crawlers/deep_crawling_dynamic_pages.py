@@ -11,7 +11,8 @@ from crawl4ai import (
     CacheMode,
 )
 from crawl4ai.deep_crawling import BFSDeepCrawlStrategy, BestFirstCrawlingStrategy
-from crawl4ai.deep_crawling.filters import FilterChain, DomainFilter
+from crawl4ai.deep_crawling.filters import FilterChain, DomainFilter, URLPatternFilter
+
 from crawl4ai.deep_crawling.scorers import KeywordRelevanceScorer
 
 logger = logging.getLogger(__name__)
@@ -127,24 +128,21 @@ async def deep_crawl_bfs(
     target_max_pages = min(max_pages if max_pages else 5, 5)
     target_max_depth = min(max_depth if max_depth else 1, 2)
 
+    filters = [DomainFilter(allowed_domains=allowed_domains)]
     if cleaned_categories:
-        logger.info(f"Dynamic crawl using BestFirst strategy with categories: {cleaned_categories} (max_pages={target_max_pages})")
-        scorer = KeywordRelevanceScorer(keywords=cleaned_categories, weight=1.0)
-        crawl_strategy = BestFirstCrawlingStrategy(
-            max_depth=target_max_depth,
-            max_pages=target_max_pages,
-            include_external=False,
-            filter_chain=url_filter,
-            url_scorer=scorer,
-        )
-    else:
-        logger.info(f"Dynamic crawl using standard BFS strategy (max_pages={target_max_pages})")
-        crawl_strategy = BFSDeepCrawlStrategy(
-            max_depth=target_max_depth,
-            max_pages=target_max_pages,
-            include_external=False,
-            filter_chain=url_filter,
-        )
+        patterns = [f"*{c.lower()}*" for c in cleaned_categories]
+        filters.append(URLPatternFilter(patterns=patterns))
+
+    url_filter = FilterChain(filters)
+
+    logger.info(f"Dynamic crawl using BFS strategy with categories: {cleaned_categories or 'all'} (max_pages={target_max_pages})")
+    crawl_strategy = BFSDeepCrawlStrategy(
+        max_depth=target_max_depth,
+        max_pages=target_max_pages,
+        include_external=False,
+        filter_chain=url_filter,
+    )
+
 
     crawler_config = CrawlerRunConfig(
         cache_mode=CacheMode.BYPASS,

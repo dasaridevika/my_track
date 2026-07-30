@@ -22,7 +22,8 @@ from pptx import Presentation
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
 from crawl4ai.content_scraping_strategy import LXMLWebScrapingStrategy
 from crawl4ai.deep_crawling import BFSDeepCrawlStrategy, BestFirstCrawlingStrategy
-from crawl4ai.deep_crawling.filters import FilterChain, DomainFilter
+from crawl4ai.deep_crawling.filters import FilterChain, DomainFilter, URLPatternFilter
+
 from crawl4ai.deep_crawling.scorers import KeywordRelevanceScorer
 
 
@@ -412,24 +413,21 @@ async def extract_webpage(
 
     cleaned_categories = [c.strip() for c in (categories or []) if c and str(c).strip()]
 
+    filters = [DomainFilter(allowed_domains=allowed_domains)]
     if cleaned_categories:
-        logger.info(f"Extracting webpage with BestFirst strategy for categories: {cleaned_categories}")
-        scorer = KeywordRelevanceScorer(keywords=cleaned_categories, weight=1.0)
-        crawl_strategy = BestFirstCrawlingStrategy(
-            max_depth=min(max_depth, 2),
-            max_pages=min(max_pages, 10),
-            include_external=False,
-            filter_chain=url_filter,
-            url_scorer=scorer,
-        )
-    else:
-        logger.info("Extracting webpage with BFS strategy")
-        crawl_strategy = BFSDeepCrawlStrategy(
-            max_depth=min(max_depth, 2),
-            max_pages=min(max_pages, 10),
-            include_external=False,
-            filter_chain=url_filter,
-        )
+        patterns = [f"*{c.lower()}*" for c in cleaned_categories]
+        filters.append(URLPatternFilter(patterns=patterns))
+
+    url_filter = FilterChain(filters)
+
+    logger.info(f"Extracting webpage with BFS strategy (categories: {cleaned_categories or 'all'})")
+    crawl_strategy = BFSDeepCrawlStrategy(
+        max_depth=min(max_depth, 2),
+        max_pages=min(max_pages, 10),
+        include_external=False,
+        filter_chain=url_filter,
+    )
+
 
     crawl_config = CrawlerRunConfig(
         deep_crawl_strategy=crawl_strategy,
