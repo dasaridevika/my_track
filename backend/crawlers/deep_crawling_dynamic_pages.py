@@ -58,7 +58,7 @@ async def deep_crawl_bfs(
     js_code = [
         """
         try {
-            const btn = Array.from(document.querySelectorAll("button, a"))
+            const btn = Array.from(document.querySelectorAll("button, [role='button'], a.btn, a.button"))
                 .find(b => {
                     const text = (b.innerText || b.textContent || "").toLowerCase();
                     return text.includes("load more") || text.includes("show more") || text.includes("view more");
@@ -81,21 +81,24 @@ async def deep_crawl_bfs(
     # Clean and filter categories
     cleaned_categories = [cat.strip() for cat in (categories or []) if cat and str(cat).strip()]
 
+    target_max_pages = min(max_pages if max_pages else 5, 5)
+    target_max_depth = min(max_depth if max_depth else 1, 2)
+
     if cleaned_categories:
-        logger.info(f"Dynamic crawl using BestFirst strategy with categories: {cleaned_categories}")
+        logger.info(f"Dynamic crawl using BestFirst strategy with categories: {cleaned_categories} (max_pages={target_max_pages})")
         scorer = KeywordRelevanceScorer(keywords=cleaned_categories, weight=1.0)
         crawl_strategy = BestFirstCrawlingStrategy(
-            max_depth=min(max_depth, 2),
-            max_pages=min(max_pages, 10),
+            max_depth=target_max_depth,
+            max_pages=target_max_pages,
             include_external=False,
             filter_chain=url_filter,
             url_scorer=scorer,
         )
     else:
-        logger.info("Dynamic crawl using standard BFS strategy")
+        logger.info(f"Dynamic crawl using standard BFS strategy (max_pages={target_max_pages})")
         crawl_strategy = BFSDeepCrawlStrategy(
-            max_depth=min(max_depth, 2),
-            max_pages=min(max_pages, 10),
+            max_depth=target_max_depth,
+            max_pages=target_max_pages,
             include_external=False,
             filter_chain=url_filter,
         )
@@ -105,8 +108,8 @@ async def deep_crawl_bfs(
         session_id=session_id,
         js_code=js_code,
         deep_crawl_strategy=crawl_strategy,
-        semaphore_count=1,
-        page_timeout=20000,
+        semaphore_count=2,
+        page_timeout=15000,
         wait_until="domcontentloaded",
     )
 
@@ -117,7 +120,6 @@ async def deep_crawl_bfs(
                     url=url,
                     config=crawler_config,
                 )
-
 
         if not isinstance(results, list):
             results = [results]
@@ -151,7 +153,7 @@ async def deep_crawl_bfs(
         return {
             "success": False,
             "method": "dynamic",
-            "error": "Dynamic page crawl timed out after 90 seconds.",
+            "error": "Dynamic page crawl timed out. Try lowering Max Pages to 3 or using Deep Crawl method for this site.",
             "pages": []
         }
     except Exception as e:
@@ -162,6 +164,7 @@ async def deep_crawl_bfs(
             "error": str(e),
             "pages": []
         }
+
 
 if __name__ == "__main__":
     async def main():

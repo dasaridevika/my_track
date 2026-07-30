@@ -581,13 +581,16 @@ a[kind="tertiary"] * {
 
 
     /* Expander */
-    [data-testid="stExpander"] {
+    [data-testid="stExpander"],
+    [data-testid="stExpander"] > div,
+    [data-testid="stExpanderDetails"] {
         background-color: var(--bg-card) !important;
         border: 1px solid var(--border) !important;
         border-radius: 12px !important;
+        color: #ffffff !important;
     }
 
-    [data-testid="stExpander"] * {
+    [data-testid="stExpander"] summary * {
         color: #ffffff !important;
     }
 
@@ -605,20 +608,27 @@ a[kind="tertiary"] * {
 
     /* Dataframe / code blocks */
     .stDataFrame, .stCodeBlock, pre, code {
-        background-color: var(--bg-card) !important;
+        background-color: #06152d !important;
         color: #ffffff !important;
         border-radius: 10px !important;
     }
 
-    /* JSON display */
-    [data-testid="stJson"] {
-        background-color: var(--bg-card) !important;
+    /* JSON display - Dark Theme & Contrast Fix */
+    [data-testid="stJson"],
+    [data-testid="stJson"] pre,
+    [data-testid="stJson"] div,
+    .react-json-view {
+        background-color: #06152d !important;
         border-radius: 10px !important;
+        color: #e2e8f0 !important;
     }
 
     [data-testid="stJson"] * {
-        color: #ffffff !important;
+        background-color: transparent !important;
+        color: #38bdf8 !important;
+        -webkit-text-fill-color: #38bdf8 !important;
     }
+
 
     /* Buttons */
     .stButton button {
