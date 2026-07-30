@@ -475,26 +475,42 @@ a[kind="tertiary"] * {
         color: #ffffff !important;
     }
 
-    /* Inputs */
-    div[data-baseweb="input"] {
-        background-color: var(--bg-soft) !important;
-        border: 1px solid var(--border) !important;
+    /* Inputs (Text Input, Number Input, Text Area, Selectbox) - Always Visible & Distinct */
+    div[data-baseweb="input"],
+    div[data-baseweb="base-input"],
+    [data-testid="stTextInput"] input,
+    [data-testid="stNumberInput"] input,
+    [data-testid="stSelectbox"] > div {
+        background-color: #13284c !important;
+        border: 1.5px solid #3b82f6 !important;
         border-radius: 10px !important;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25) !important;
     }
 
     div[data-baseweb="input"] input,
-    div[data-baseweb="input"] textarea {
-        background-color: var(--bg-soft) !important;
+    div[data-baseweb="input"] textarea,
+    [data-testid="stTextInput"] input,
+    [data-testid="stNumberInput"] input {
+        background-color: #13284c !important;
         color: #ffffff !important;
         -webkit-text-fill-color: #ffffff !important;
         caret-color: #ffffff !important;
+        font-weight: 500 !important;
     }
 
     div[data-baseweb="input"] input::placeholder,
-    div[data-baseweb="input"] textarea::placeholder {
+    div[data-baseweb="input"] textarea::placeholder,
+    [data-testid="stTextInput"] input::placeholder {
         color: #cbd5e1 !important;
         -webkit-text-fill-color: #cbd5e1 !important;
-        opacity: 1 !important;
+        opacity: 0.85 !important;
+    }
+
+    div[data-baseweb="input"]:focus-within,
+    div[data-baseweb="select"]:focus-within,
+    [data-testid="stTextInput"] div[data-baseweb="input"]:focus-within {
+        border-color: #38bdf8 !important;
+        box-shadow: 0 0 12px rgba(56, 189, 248, 0.4) !important;
     }
 
     /* Selectbox */
@@ -503,11 +519,12 @@ a[kind="tertiary"] * {
     }
 
     div[data-baseweb="select"] > div {
-        background-color: var(--bg-soft) !important;
-        border: 1px solid var(--border) !important;
+        background-color: #13284c !important;
+        border: 1.5px solid #3b82f6 !important;
         border-radius: 10px !important;
         color: #ffffff !important;
     }
+
 
     div[data-baseweb="select"] * {
         color: #ffffff !important;
