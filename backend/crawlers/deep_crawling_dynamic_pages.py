@@ -117,9 +117,9 @@ async def deep_crawl_bfs(
     ]
 
     domain = urlparse(url).netloc
-    url_filter = FilterChain([
-        DomainFilter(allowed_domains=[domain])
-    ])
+    base_domain = domain.replace("www.", "")
+    allowed_domains = list(set([domain, base_domain, f"www.{base_domain}"]))
+    url_filter = FilterChain([DomainFilter(allowed_domains=allowed_domains)])
 
     # Clean and filter categories
     cleaned_categories = [cat.strip() for cat in (categories or []) if cat and str(cat).strip()]
