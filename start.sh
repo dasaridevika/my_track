@@ -8,10 +8,12 @@ if [ "$BACKEND_PORT" = "$APP_PORT" ]; then
   BACKEND_PORT=8001
 fi
 
-export PYTHONPATH="$(pwd)/backend:$(pwd):$PYTHONPATH"
+export PYTHONPATH="$(pwd):$(pwd)/backend:$PYTHONPATH"
 export API_URL="${API_URL:-http://127.0.0.1:${BACKEND_PORT}/crawl}"
 export PLAYWRIGHT_BROWSERS_PATH="/app/.bin/ms-playwright"
-playwright install
+
+# Ensure chromium binary is ready (fast check)
+playwright install chromium 2>/dev/null || true
 
 python -m uvicorn backend.main:app --host 127.0.0.1 --port "$BACKEND_PORT" &
 BACKEND_PID=$!
@@ -21,7 +23,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-sleep 3
+sleep 2
 echo "Starting Streamlit on port $APP_PORT"
 echo "Backend API URL=$API_URL"
 
@@ -31,3 +33,4 @@ exec streamlit run frontend/app.py \
   --server.headless true \
   --server.enableCORS false \
   --server.enableXsrfProtection false
+
