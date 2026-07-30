@@ -139,25 +139,7 @@ def render_analysis(analysis: dict | None):
             st.checkbox(item, key=f"action_item_{idx}")
         st.markdown("</div>", unsafe_allow_html=True)
 
-    links_data = extracted.get("links", {})
-    if isinstance(links_data, dict):
-        internal = links_data.get("internal", []) or []
-        external = links_data.get("external", []) or []
-        total = links_data.get("total_count", len(internal) + len(external))
 
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.subheader("Extracted Page Links")
-        with st.expander(f"View Page Links ({total} links)"):
-            all_links = []
-            for l in internal:
-                all_links.append({"URL": l.get("href") if isinstance(l, dict) else str(l), "Anchor Text": l.get("text", "N/A") if isinstance(l, dict) else "N/A", "Type": "internal"})
-            for l in external:
-                all_links.append({"URL": l.get("href") if isinstance(l, dict) else str(l), "Anchor Text": l.get("text", "N/A") if isinstance(l, dict) else "N/A", "Type": "external"})
-            if all_links:
-                st.dataframe(all_links[:250], use_container_width=True)
-            else:
-                st.caption("No internal or external links found.")
-        st.markdown("</div>", unsafe_allow_html=True)
 
 
 
