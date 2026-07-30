@@ -328,9 +328,12 @@ async def analyze_extracted_data(
         "analysis_type": analysis_type or "summary"
     }
 
+LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "120.0"))
+
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=LLM_TIMEOUT) as client:
             response = await client.post(WORKER_ANALYZE_URL, json=payload)
+
 
         if response.status_code != 200:
             return _safe_analysis(
