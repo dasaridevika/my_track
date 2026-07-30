@@ -69,18 +69,16 @@ def render_analysis(analysis: dict | None):
         st.warning(f"LLM analysis failed: {analysis['error']}")
         return
 
-    st.markdown('<div class="card summary-card">', unsafe_allow_html=True)
     st.subheader("Executive Summary")
     if summary := analysis.get("summary"):
         st.write(summary)
     else:
         st.info("No executive summary found in response.")
-    st.markdown("</div>", unsafe_allow_html=True)
 
+    st.markdown("<br>", unsafe_allow_html=True)
     col1, col2 = st.columns(2)
 
     with col1:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("Sentiment Analysis")
         sentiment = analysis.get("sentiment", "neutral").lower()
 
@@ -94,9 +92,7 @@ def render_analysis(analysis: dict | None):
             f'<span class="sentiment-tag {class_name}">{sentiment}</span>',
             unsafe_allow_html=True,
         )
-        st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("Topics")
         topics = analysis.get("topics", [])
         if isinstance(topics, list) and topics:
@@ -106,10 +102,8 @@ def render_analysis(analysis: dict | None):
             st.markdown(topic_badges, unsafe_allow_html=True)
         else:
             st.info("No topics classified.")
-        st.markdown("</div>", unsafe_allow_html=True)
 
     with col2:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("Keywords")
         keywords = analysis.get("keywords", [])
         if isinstance(keywords, list) and keywords:
@@ -119,9 +113,7 @@ def render_analysis(analysis: dict | None):
             st.markdown(keyword_badges, unsafe_allow_html=True)
         else:
             st.info("No keywords extracted.")
-        st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown('<div class="card">', unsafe_allow_html=True)
     st.subheader("Important Takeaways")
     points = analysis.get("important_points", [])
     if isinstance(points, list) and points:
@@ -129,15 +121,13 @@ def render_analysis(analysis: dict | None):
         st.markdown(f'<ul class="bullet-list">{bullets}</ul>', unsafe_allow_html=True)
     else:
         st.info("No key points listed.")
-    st.markdown("</div>", unsafe_allow_html=True)
 
     action_items = analysis.get("action_items", [])
     if isinstance(action_items, list) and action_items:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("Recommended Actions")
         for idx, item in enumerate(action_items):
             st.checkbox(item, key=f"action_item_{idx}")
-        st.markdown("</div>", unsafe_allow_html=True)
+
 
 
 
