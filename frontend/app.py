@@ -163,14 +163,18 @@ def render_structured_extraction(data: dict):
 
 def render_multi_page_result(data: dict, method: str):
     extracted = data
-    if isinstance(data.get("extracted_data"), dict):
-        extracted = data["extracted_data"]
-    if isinstance(extracted.get("data"), dict):
-        extracted = extracted["data"]
+    while isinstance(extracted, dict) and not (extracted.get("pages") or extracted.get("all_links")):
+        if isinstance(extracted.get("extracted_data"), dict):
+            extracted = extracted["extracted_data"]
+        elif isinstance(extracted.get("data"), dict):
+            extracted = extracted["data"]
+        else:
+            break
 
     pages = extracted.get("pages") or data.get("pages") or []
     categories = extracted.get("categories") or data.get("categories") or []
     all_links = extracted.get("all_links") or data.get("all_links") or []
+
 
 
 

@@ -8,7 +8,9 @@ import asyncio
 import json
 import logging
 import os
+import re
 import tempfile
+
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -39,10 +41,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(
 logger = logging.getLogger(__name__)
 
 
-def extract_clean_links(raw_links, html_content: str = "", base_url: str = "") -> dict:
-    if not raw_links and not html_content:
-        return {"internal": [], "external": [], "total_count": 0}
-
+def extract_clean_links(raw_links, html_content: str = "", base_url: str = "", markdown_text: str = "") -> dict:
     clean_internal = []
     clean_external = []
     seen = set()
@@ -73,12 +72,30 @@ def extract_clean_links(raw_links, html_content: str = "", base_url: str = "") -
     if html_content and isinstance(html_content, str):
         try:
             soup = BeautifulSoup(html_content, "html.parser")
+            base_netloc = urlparse(base_url).netloc if base_url else ""
             for a_tag in soup.find_all("a", href=True):
                 href = a_tag.get("href", "").strip()
                 if href and href not in seen and not href.startswith("javascript:") and not href.startswith("#"):
                     seen.add(href)
                     text = a_tag.get_text(strip=True) or href
-                    clean_internal.append({"href": href, "text": text, "type": "internal"})
+                    if base_netloc and href.startswith("http") and base_netloc not in href:
+                        clean_external.append({"href": href, "text": text, "type": "external"})
+                    else:
+                        clean_internal.append({"href": href, "text": text, "type": "internal"})
+        except Exception:
+            pass
+
+    if markdown_text and isinstance(markdown_text, str):
+        try:
+            base_netloc = urlparse(base_url).netloc if base_url else ""
+            for m in re.finditer(r'\[(.*?)\]\((https?://[^\s\)]+)\)', markdown_text):
+                text, href = m.group(1).strip(), m.group(2).strip()
+                if href and href not in seen:
+                    seen.add(href)
+                    if base_netloc and base_netloc not in href:
+                        clean_external.append({"href": href, "text": text or href, "type": "external"})
+                    else:
+                        clean_internal.append({"href": href, "text": text or href, "type": "internal"})
         except Exception:
             pass
 
@@ -87,6 +104,7 @@ def extract_clean_links(raw_links, html_content: str = "", base_url: str = "") -
         "external": clean_external,
         "total_count": len(clean_internal) + len(clean_external),
     }
+
 
 
 
@@ -468,7 +486,12 @@ async def extract_webpage(
 
         for result in results:
             raw_links = getattr(result, "links", {})
-            parsed_links = extract_clean_links(raw_links)
+            html_raw = getattr(result, "html", "") or ""
+            md_raw = markdown_text(getattr(result, "markdown", ""))
+            page_url = getattr(result, "url", url)
+            parsed_links = extract_clean_links(raw_links, html_content=html_raw, base_url=page_url, markdown_text=md_raw)
+
+
 
             for l in parsed_links["internal"] + parsed_links["external"]:
                 if l["href"] not in seen_all_links:

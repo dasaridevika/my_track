@@ -187,7 +187,9 @@ async def deep_crawl_bfs(
             url_val = getattr(page, "url", url)
             success_val = getattr(page, "success", False)
             md_raw = get_markdown_text(getattr(page, "markdown", None))
-            parsed_links = extract_clean_links(getattr(page, "links", {}))
+            html_raw = getattr(page, "html", "") or ""
+            parsed_links = extract_clean_links(getattr(page, "links", {}), html_content=html_raw, base_url=url_val)
+
 
             for l in parsed_links["internal"] + parsed_links["external"]:
                 if l["href"] not in seen_all_links:
