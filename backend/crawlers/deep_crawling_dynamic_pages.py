@@ -106,16 +106,18 @@ async def deep_crawl_bfs(
         js_code=js_code,
         deep_crawl_strategy=crawl_strategy,
         semaphore_count=1,
-        page_timeout=35000,
+        page_timeout=20000,
+        wait_until="domcontentloaded",
     )
 
     try:
-        async with asyncio.timeout(90):
+        async with asyncio.timeout(120):
             async with AsyncWebCrawler(config=browser_config) as crawler:
                 results = await crawler.arun(
                     url=url,
                     config=crawler_config,
                 )
+
 
         if not isinstance(results, list):
             results = [results]

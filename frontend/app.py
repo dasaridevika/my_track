@@ -279,9 +279,9 @@ def render_pdf_result(data: dict):
             "Extracted PDF text",
             markdown,
             height=260,
-            disabled=True,
             key="pdf_extracted_text_area",
         )
+
     else:
         st.warning("No selectable text was found in this PDF.")
 
@@ -561,18 +561,24 @@ a[kind="tertiary"] * {
         -webkit-text-fill-color: #ffffff !important;
     }
 
-    /* Text area */
-    .stTextArea textarea {
-        background-color: var(--bg-soft) !important;
+    /* Text area readability fix */
+    .stTextArea textarea,
+    .stTextArea textarea:disabled,
+    .stTextArea textarea[disabled],
+    div[data-baseweb="textarea"] textarea,
+    div[data-baseweb="textarea"] textarea:disabled,
+    div[data-baseweb="textarea"] * {
+        background-color: #0b192e !important;
         color: #ffffff !important;
-        border: 1px solid var(--border) !important;
-        border-radius: 10px !important;
         -webkit-text-fill-color: #ffffff !important;
+        opacity: 1 !important;
+        border: 1px solid #294a7a !important;
     }
 
     .stTextArea textarea::placeholder {
         color: #cbd5e1 !important;
     }
+
 
     /* Expander */
     [data-testid="stExpander"] {
@@ -851,9 +857,9 @@ with col2:
                             "Extracted Content",
                             markdown,
                             height=350,
-                            disabled=True,
                             key="generic_extracted_content",
                         )
+
                     else:
                         st.info("No extracted text content available.")
 
