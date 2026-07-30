@@ -192,13 +192,16 @@ def render_structured_extraction(data: dict):
 
 
 def render_multi_page_result(data: dict, method: str):
-    extracted_data = data.get("extracted_data")
-    if isinstance(extracted_data, dict):
-        pages = extracted_data.get("pages") or data.get("pages") or []
-        categories = extracted_data.get("categories") or data.get("categories") or []
-    else:
-        pages = data.get("pages", [])
-        categories = data.get("categories", [])
+    extracted = data
+    if isinstance(data.get("extracted_data"), dict):
+        extracted = data["extracted_data"]
+    if isinstance(extracted.get("data"), dict):
+        extracted = extracted["data"]
+
+    pages = extracted.get("pages") or data.get("pages") or []
+    categories = extracted.get("categories") or data.get("categories") or []
+    all_links = extracted.get("all_links") or data.get("all_links") or []
+
 
 
     if pages:

@@ -430,13 +430,13 @@ async def extract_webpage(
 
     crawl_config = CrawlerRunConfig(
         deep_crawl_strategy=crawl_strategy,
-        scraping_strategy=LXMLWebScrapingStrategy(),
         cache_mode=CacheMode.BYPASS,
-        page_timeout=30_000,
+        page_timeout=15_000,
         wait_until="domcontentloaded",
         verbose=False,
-        semaphore_count=1,
+        semaphore_count=2,
     )
+
 
     try:
         async with asyncio.timeout(90):
@@ -488,7 +488,7 @@ async def extract_webpage(
             "pages": pages,
         }
 
-        return build_response(
+        resp = build_response(
             bool(output["successful_pages"]),
             "html",
             {
@@ -497,6 +497,13 @@ async def extract_webpage(
             },
             "" if output["successful_pages"] else "The website blocked or failed the crawl.",
         )
+        resp["pages"] = pages
+        resp["all_links"] = all_links_list
+        resp["total_links_found"] = len(all_links_list)
+        resp["categories"] = cleaned_categories
+        resp["total_pages"] = len(pages)
+        return resp
+
 
 
     except asyncio.TimeoutError:
