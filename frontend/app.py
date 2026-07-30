@@ -148,7 +148,6 @@ def render_structured_extraction(data: dict):
     elif isinstance(extracted_content, (dict, list)):
         parsed_content = extracted_content
 
-    st.markdown('<div class="card">', unsafe_allow_html=True)
     st.subheader("Extracted Content")
 
     if isinstance(parsed_content, list) and parsed_content and isinstance(parsed_content[0], dict):
@@ -160,7 +159,6 @@ def render_structured_extraction(data: dict):
     else:
         st.info("No content matched the selection criteria.")
 
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_multi_page_result(data: dict, method: str):
@@ -177,7 +175,6 @@ def render_multi_page_result(data: dict, method: str):
 
 
     if pages:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("Crawl Overview")
 
         if categories:
@@ -230,21 +227,20 @@ def render_multi_page_result(data: dict, method: str):
                                 "type": l.get("type", "internal") if isinstance(l, dict) else "internal"
                             })
 
-        with st.expander(f"View Discovered Links ({len(all_links)} links)"):
-            if all_links:
-                links_table = [
-                    {
-                        "URL": l.get("href"),
-                        "Anchor Text": l.get("text") or "N/A",
-                        "Type": l.get("type", "internal"),
-                    }
-                    for l in all_links[:250]
-                ]
-                st.dataframe(links_table, use_container_width=True)
-            else:
-                st.caption("No internal or external links were extracted.")
+        st.subheader(f"Crawled Website Links ({len(all_links)} links)")
+        if all_links:
+            links_table = [
+                {
+                    "URL": l.get("href"),
+                    "Anchor Text": l.get("text") or "N/A",
+                    "Type": l.get("type", "internal"),
+                }
+                for l in all_links[:500]
+            ]
+            st.dataframe(links_table, use_container_width=True)
+        else:
+            st.info("No internal or external links were extracted.")
 
-        st.markdown("</div>", unsafe_allow_html=True)
 
 
 
@@ -757,7 +753,6 @@ st.markdown(
 col1, col2 = st.columns([1, 2], gap="large")
 
 with col1:
-    st.markdown('<div class="card">', unsafe_allow_html=True)
     st.subheader("Extraction Target")
 
     input_url = st.text_input(
@@ -765,6 +760,7 @@ with col1:
         placeholder="https://example.com",
         key="input_url",
     )
+
 
     selected_method = st.selectbox(
         "Extraction Method",
@@ -869,9 +865,8 @@ with col1:
             help="Uploaded PDFs are extracted and analyzed with the same LLM workflow.",
         )
 
-    st.markdown("<br>", unsafe_allow_html=True)
     start_btn = st.button("Start Extraction", use_container_width=True, key="start_btn")
-    st.markdown("</div>", unsafe_allow_html=True)
+
 
 with col2:
     if start_btn:
