@@ -709,6 +709,9 @@ with col1:
     categories_list = []
     max_pages_val = 5
     max_depth_val = 1
+    regex_patterns_param = None
+    css_schema_param = None
+    xpath_schema_param = None
 
     if selected_method in ["deep", "dynamic"]:
         categories_input = st.text_input(
@@ -741,6 +744,42 @@ with col1:
                 key="max_depth_val",
                 help="Recommended 1 for Railway Free Tier limit.",
             )
+
+    elif selected_method == "regex":
+        regex_input_raw = st.text_area(
+            "Custom Regex Patterns (Optional)",
+            placeholder='emails: [A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\nurls: https?://\\S+',
+            key="regex_input_raw",
+            help="Provide custom regex patterns (JSON string or line-by-line key:pattern). Leave blank for default patterns.",
+        )
+        if regex_input_raw.strip():
+            regex_patterns_param = regex_input_raw.strip()
+
+    elif selected_method == "css":
+        css_input_raw = st.text_area(
+            "Custom CSS Extraction Schema (Optional JSON)",
+            placeholder='{\n  "name": "Custom",\n  "baseSelector": "body",\n  "fields": [\n    {"name": "title", "selector": "h1", "type": "text"}\n  ]\n}',
+            key="css_input_raw",
+            help="Provide a JSON CSS extraction schema. Leave blank for default schema.",
+        )
+        if css_input_raw.strip():
+            try:
+                css_schema_param = json.loads(css_input_raw.strip())
+            except Exception:
+                st.warning("Invalid JSON format for CSS schema; using default schema.")
+
+    elif selected_method == "xpath":
+        xpath_input_raw = st.text_area(
+            "Custom XPath Extraction Schema (Optional JSON)",
+            placeholder='{\n  "name": "Custom",\n  "baseSelector": "//body",\n  "fields": [\n    {"name": "title", "selector": "//h1", "type": "text"}\n  ]\n}',
+            key="xpath_input_raw",
+            help="Provide a JSON XPath extraction schema. Leave blank for default schema.",
+        )
+        if xpath_input_raw.strip():
+            try:
+                xpath_schema_param = json.loads(xpath_input_raw.strip())
+            except Exception:
+                st.warning("Invalid JSON format for XPath schema; using default schema.")
 
     show_pdf_upload = (
         selected_method == "pdf"
@@ -789,6 +828,9 @@ with col2:
                         "categories": categories_list,
                         "max_pages": int(max_pages_val),
                         "max_depth": int(max_depth_val),
+                        "regex_patterns": regex_patterns_param,
+                        "css_schema": css_schema_param,
+                        "xpath_schema": xpath_schema_param,
                     }
                     with st.spinner("Crawling content and analyzing context..."):
                         response = requests.post(
@@ -796,6 +838,7 @@ with col2:
                             json=payload,
                             timeout=300,
                         )
+
 
 
                 if response.status_code != 200:
