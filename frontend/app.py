@@ -216,7 +216,40 @@ def render_multi_page_result(data: dict, method: str):
                     st.caption("No text extracted for this page.")
                 st.divider()
 
+        all_links = extracted.get("all_links", [])
+        if not all_links:
+            all_links = []
+            seen_hrefs = set()
+            for p in pages:
+                p_links = p.get("links", {})
+                if isinstance(p_links, dict):
+                    combined = p_links.get("internal", []) + p_links.get("external", [])
+                    for l in combined:
+                        href = l.get("href") if isinstance(l, dict) else str(l)
+                        if href and href not in seen_hrefs:
+                            seen_hrefs.add(href)
+                            all_links.append({
+                                "href": href,
+                                "text": l.get("text", "") if isinstance(l, dict) else href,
+                                "type": l.get("type", "internal") if isinstance(l, dict) else "internal"
+                            })
+
+        with st.expander(f"View Discovered Links ({len(all_links)} links)"):
+            if all_links:
+                links_table = [
+                    {
+                        "URL": l.get("href"),
+                        "Anchor Text": l.get("text") or "N/A",
+                        "Type": l.get("type", "internal"),
+                    }
+                    for l in all_links[:250]
+                ]
+                st.dataframe(links_table, use_container_width=True)
+            else:
+                st.caption("No internal or external links were extracted.")
+
         st.markdown("</div>", unsafe_allow_html=True)
+
 
 
 
