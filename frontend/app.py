@@ -171,15 +171,14 @@ def render_structured_extraction(data: dict):
 
 
 def render_multi_page_result(data: dict, method: str):
-    pages = []
-    categories = []
-    if method == "dynamic":
+    extracted_data = data.get("extracted_data")
+    if isinstance(extracted_data, dict):
+        pages = extracted_data.get("pages") or data.get("pages") or []
+        categories = extracted_data.get("categories") or data.get("categories") or []
+    else:
         pages = data.get("pages", [])
         categories = data.get("categories", [])
-    elif method == "deep":
-        extracted_data = data.get("extracted_data", {})
-        pages = extracted_data.get("pages", [])
-        categories = extracted_data.get("categories", [])
+
 
     if pages:
         st.markdown('<div class="card">', unsafe_allow_html=True)
