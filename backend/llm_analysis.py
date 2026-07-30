@@ -327,8 +327,11 @@ async def analyze_extracted_data(
         "url": url or "",
         "title": title or "",
         "text": cleaned_text,
-        "analysis_type": analysis_type or "summary"
+        "analysis_type": analysis_type or "summary",
+        "target_language": "English",
+        "prompt": "Analyze the provided web content and produce all output fields (summary, topics, keywords, sentiment, important_points, action_items) strictly in English language."
     }
+
 
     try:
         async with httpx.AsyncClient(timeout=LLM_TIMEOUT) as client:

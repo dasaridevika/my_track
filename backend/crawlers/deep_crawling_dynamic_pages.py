@@ -47,14 +47,17 @@ async def deep_crawl_bfs(
         verbose=False,
         enable_stealth=True,
         ignore_https_errors=True,
+        headers={"Accept-Language": "en-US,en;q=0.9"},
         extra_args=[
             "--no-sandbox",
             "--disable-setuid-sandbox",
             "--disable-gpu",
             "--disable-dev-shm-usage",
-            "--js-flags=--max-old-space-size=128"
+            "--js-flags=--max-old-space-size=128",
+            "--lang=en-US"
         ]
     )
+
 
 
     js_code = [
