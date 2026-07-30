@@ -161,6 +161,25 @@ def render_structured_extraction(data: dict):
 
 
 
+def is_required_page_link(url_str: str, text_str: str, categories: list) -> bool:
+    if not url_str or not isinstance(url_str, str):
+        return False
+    u = url_str.lower()
+    t = (text_str or "").lower()
+
+    ignored_exts = (".png", ".jpg", ".jpeg", ".gif", ".svg", ".css", ".js", ".ico", ".woff", ".ttf", ".mp4", ".zip", ".webp")
+    if any(u.endswith(ext) or ext in u for ext in ignored_exts):
+        return False
+    if any(ign in u for ign in ["javascript:", "mailto:", "tel:", "facebook.com", "twitter.com", "instagram.com", "linkedin.com", "youtube.com", "google.com"]):
+        return False
+
+    if categories:
+        cats = [str(c).lower().strip() for c in categories if c]
+        if cats and not any(cat in u or cat in t for cat in cats):
+            return False
+    return True
+
+
 def render_multi_page_result(data: dict, method: str):
     extracted = data
     while isinstance(extracted, dict) and not (extracted.get("pages") or extracted.get("all_links")):
@@ -173,10 +192,29 @@ def render_multi_page_result(data: dict, method: str):
 
     pages = extracted.get("pages") or data.get("pages") or []
     categories = extracted.get("categories") or data.get("categories") or []
-    all_links = extracted.get("all_links") or data.get("all_links") or []
+    raw_all_links = extracted.get("all_links") or data.get("all_links") or []
 
+    if not raw_all_links:
+        raw_all_links = []
+        seen_hrefs = set()
+        for p in pages:
+            p_links = p.get("links", {})
+            if isinstance(p_links, dict):
+                combined = p_links.get("internal", []) + p_links.get("external", [])
+                for l in combined:
+                    href = l.get("href") if isinstance(l, dict) else str(l)
+                    if href and href not in seen_hrefs:
+                        seen_hrefs.add(href)
+                        raw_all_links.append({
+                            "href": href,
+                            "text": l.get("text", "") if isinstance(l, dict) else href,
+                            "type": l.get("type", "internal") if isinstance(l, dict) else "internal"
+                        })
 
-
+    filtered_required_links = [
+        l for l in raw_all_links
+        if is_required_page_link(l.get("href") if isinstance(l, dict) else str(l), l.get("text", "") if isinstance(l, dict) else "", categories)
+    ]
 
     if pages:
         st.subheader("Crawl Overview")
@@ -213,37 +251,20 @@ def render_multi_page_result(data: dict, method: str):
                     st.caption("No text extracted for this page.")
                 st.divider()
 
-        all_links = extracted.get("all_links", [])
-        if not all_links:
-            all_links = []
-            seen_hrefs = set()
-            for p in pages:
-                p_links = p.get("links", {})
-                if isinstance(p_links, dict):
-                    combined = p_links.get("internal", []) + p_links.get("external", [])
-                    for l in combined:
-                        href = l.get("href") if isinstance(l, dict) else str(l)
-                        if href and href not in seen_hrefs:
-                            seen_hrefs.add(href)
-                            all_links.append({
-                                "href": href,
-                                "text": l.get("text", "") if isinstance(l, dict) else href,
-                                "type": l.get("type", "internal") if isinstance(l, dict) else "internal"
-                            })
-
-        st.subheader(f"Crawled Website Links ({len(all_links)} links)")
-        if all_links:
+        st.subheader(f"Required Website Links ({len(filtered_required_links)} links)")
+        if filtered_required_links:
             links_table = [
                 {
                     "URL": l.get("href"),
                     "Anchor Text": l.get("text") or "N/A",
                     "Type": l.get("type", "internal"),
                 }
-                for l in all_links[:500]
+                for l in filtered_required_links[:250]
             ]
             st.dataframe(links_table, use_container_width=True)
         else:
-            st.info("No internal or external links were extracted.")
+            st.info("No matching required website links were found.")
+
 
 
 
