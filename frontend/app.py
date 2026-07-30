@@ -475,13 +475,15 @@ a[kind="tertiary"] * {
         color: #ffffff !important;
     }
 
-    /* Inputs (Text Input, Number Input, Text Area, Selectbox) - Always Visible & Distinct */
+    /* Inputs (Text Input, Number Input, Text Area, Selectbox) - Dark Theme & Autofill Fix */
     div[data-baseweb="input"],
     div[data-baseweb="base-input"],
+    [data-testid="stTextInput"] > div,
     [data-testid="stTextInput"] input,
     [data-testid="stNumberInput"] input,
     [data-testid="stSelectbox"] > div {
-        background-color: #13284c !important;
+        background-color: #0d2242 !important;
+        background: #0d2242 !important;
         border: 1.5px solid #3b82f6 !important;
         border-radius: 10px !important;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25) !important;
@@ -491,11 +493,28 @@ a[kind="tertiary"] * {
     div[data-baseweb="input"] textarea,
     [data-testid="stTextInput"] input,
     [data-testid="stNumberInput"] input {
-        background-color: #13284c !important;
+        background-color: #0d2242 !important;
+        background: #0d2242 !important;
         color: #ffffff !important;
         -webkit-text-fill-color: #ffffff !important;
         caret-color: #ffffff !important;
         font-weight: 500 !important;
+    }
+
+    /* Kill Chrome / Edge White Autofill Background */
+    div[data-baseweb="input"] input:-webkit-autofill,
+    div[data-baseweb="input"] input:-webkit-autofill:hover,
+    div[data-baseweb="input"] input:-webkit-autofill:focus,
+    div[data-baseweb="input"] input:-webkit-autofill:active,
+    [data-testid="stTextInput"] input:-webkit-autofill,
+    [data-testid="stTextInput"] input:-webkit-autofill:hover,
+    [data-testid="stTextInput"] input:-webkit-autofill:focus,
+    [data-testid="stTextInput"] input:-webkit-autofill:active {
+        -webkit-text-fill-color: #ffffff !important;
+        -webkit-box-shadow: 0 0 0px 1000px #0d2242 inset !important;
+        box-shadow: 0 0 0px 1000px #0d2242 inset !important;
+        transition: background-color 50000s ease-in-out 0s !important;
+        color: #ffffff !important;
     }
 
     div[data-baseweb="input"] input::placeholder,
@@ -512,6 +531,7 @@ a[kind="tertiary"] * {
         border-color: #38bdf8 !important;
         box-shadow: 0 0 12px rgba(56, 189, 248, 0.4) !important;
     }
+
 
     /* Selectbox */
     div[data-baseweb="select"] {
