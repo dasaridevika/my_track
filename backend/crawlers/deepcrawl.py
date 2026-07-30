@@ -21,7 +21,10 @@ from pptx import Presentation
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
 from crawl4ai.content_scraping_strategy import LXMLWebScrapingStrategy
-from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
+from crawl4ai.deep_crawling import BFSDeepCrawlStrategy, BestFirstCrawlingStrategy
+from crawl4ai.deep_crawling.filters import FilterChain, DomainFilter
+from crawl4ai.deep_crawling.scorers import KeywordRelevanceScorer
+
 
 try:
     from storage import is_bucket_configured, make_object_key, upload_file
@@ -336,8 +339,13 @@ def markdown_text(markdown) -> str:
     )
 
 
-async def extract_webpage(url: str):
-    """Crawl a public website and follow same-domain links."""
+async def extract_webpage(
+    url: str,
+    categories: list | None = None,
+    max_depth: int = 1,
+    max_pages: int = 5,
+):
+    """Crawl a public website and follow same-domain links using Best-First or BFS strategy."""
     browser_config = BrowserConfig(
         headless=True,
         verbose=False,
@@ -346,12 +354,32 @@ async def extract_webpage(url: str):
         extra_args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu", "--disable-dev-shm-usage"]
     )
 
-    crawl_config = CrawlerRunConfig(
-        deep_crawl_strategy=BFSDeepCrawlStrategy(
-            max_depth=1,
-            max_pages=5,
+    domain = urlparse(url).netloc
+    url_filter = FilterChain([DomainFilter(allowed_domains=[domain])])
+
+    cleaned_categories = [c.strip() for c in (categories or []) if c and str(c).strip()]
+
+    if cleaned_categories:
+        logger.info(f"Extracting webpage with BestFirst strategy for categories: {cleaned_categories}")
+        scorer = KeywordRelevanceScorer(keywords=cleaned_categories, weight=1.0)
+        crawl_strategy = BestFirstCrawlingStrategy(
+            max_depth=min(max_depth, 2),
+            max_pages=min(max_pages, 10),
             include_external=False,
-        ),
+            filter_chain=url_filter,
+            url_scorer=scorer,
+        )
+    else:
+        logger.info("Extracting webpage with BFS strategy")
+        crawl_strategy = BFSDeepCrawlStrategy(
+            max_depth=min(max_depth, 2),
+            max_pages=min(max_pages, 10),
+            include_external=False,
+            filter_chain=url_filter,
+        )
+
+    crawl_config = CrawlerRunConfig(
+        deep_crawl_strategy=crawl_strategy,
         scraping_strategy=LXMLWebScrapingStrategy(),
         cache_mode=CacheMode.BYPASS,
         page_timeout=30_000,
@@ -389,6 +417,7 @@ async def extract_webpage(url: str):
             return build_response(False, "html", None, "The website returned no crawlable pages.")
 
         output = {
+            "categories": cleaned_categories,
             "total_pages": len(pages),
             "successful_pages": sum(1 for page in pages if page["success"]),
             "pages": pages,
@@ -475,6 +504,7 @@ def normalize_deepcrawl_output(raw_result):
         "file_type": raw_result.get("file_type", "html"),
         "message": raw_result.get("message", ""),
         "extracted_data": {
+            "categories": payload.get("categories", []),
             "pages": normalized_pages,
             "total_pages": payload.get("total_pages", len(normalized_pages)),
             "successful_pages": payload.get(
@@ -486,14 +516,28 @@ def normalize_deepcrawl_output(raw_result):
     }
 
 
-async def deep_crawl(url: str):
+async def deep_crawl(
+    url: str,
+    categories: list | None = None,
+    max_depth: int = 1,
+    max_pages: int = 5,
+    **kwargs
+):
     """Choose the correct extractor for a public HTTP(S) URL."""
     try:
         validate_url(url)
         file_type = await detect_file_type(url)
 
+        if file_type == "html":
+            result = await extract_webpage(
+                url,
+                categories=categories,
+                max_depth=max_depth,
+                max_pages=max_pages,
+            )
+            return normalize_deepcrawl_output(result)
+
         extractors = {
-            "html": extract_webpage,
             "pdf": extract_pdf,
             "excel": extract_excel,
             "csv": extract_csv,
@@ -508,16 +552,12 @@ async def deep_crawl(url: str):
         if extractor is None:
             return build_response(False, file_type, None, f"Unsupported file type: {file_type}")
 
-        result = await extractor(url)
-
-        if file_type == "html":
-            return normalize_deepcrawl_output(result)
-
-        return result
+        return await extractor(url)
 
     except Exception as error:
         logger.exception("Crawl failed")
         return build_response(False, "unknown", None, str(error))
+
 
 
 if __name__ == "__main__":

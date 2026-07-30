@@ -172,15 +172,23 @@ def render_structured_extraction(data: dict):
 
 def render_multi_page_result(data: dict, method: str):
     pages = []
+    categories = []
     if method == "dynamic":
         pages = data.get("pages", [])
+        categories = data.get("categories", [])
     elif method == "deep":
         extracted_data = data.get("extracted_data", {})
         pages = extracted_data.get("pages", [])
+        categories = extracted_data.get("categories", [])
 
     if pages:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("Crawl Overview")
+
+        if categories:
+            badges = "".join([f'<span class="badge">{c}</span>' for c in categories])
+            st.markdown(f"**Best-First Focus Categories:** {badges}", unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
 
         col_m1, col_m2 = st.columns(2)
         with col_m1:
@@ -198,7 +206,19 @@ def render_multi_page_result(data: dict, method: str):
             for p in pages
         ]
         st.dataframe(page_table, use_container_width=True)
+
+        with st.expander("View Pages Content"):
+            for idx, p in enumerate(pages, 1):
+                st.markdown(f"#### Page {idx}: [{p.get('title') or 'Untitled'}]({p.get('url')})")
+                md_text = p.get("markdown") or p.get("content") or ""
+                if md_text:
+                    st.text_area(f"Content Preview ({p.get('url')})", md_text[:2000], height=150, key=f"page_preview_{idx}")
+                else:
+                    st.caption("No text extracted for this page.")
+                st.divider()
+
         st.markdown("</div>", unsafe_allow_html=True)
+
 
 
 def render_snapshot_result(data: dict):
@@ -671,6 +691,42 @@ with col1:
         key="selected_method",
     )
 
+    categories_list = []
+    max_pages_val = 5
+    max_depth_val = 1
+
+    if selected_method in ["deep", "dynamic"]:
+        categories_input = st.text_input(
+            "Categories / Keywords Filter (comma-separated)",
+            placeholder="e.g. python, tutorial, AI",
+            key="categories_input",
+            help="Best-First crawling strategy prioritizes pages related to these categories.",
+        )
+        if categories_input.strip():
+            categories_list = [c.strip() for c in categories_input.split(",") if c.strip()]
+
+        col_p, col_d = st.columns(2)
+        with col_p:
+            max_pages_val = st.number_input(
+                "Max Pages",
+                min_value=1,
+                max_value=10,
+                value=5,
+                step=1,
+                key="max_pages_val",
+                help="Recommended 5 for Railway Free Tier limit.",
+            )
+        with col_d:
+            max_depth_val = st.number_input(
+                "Max Depth",
+                min_value=1,
+                max_value=2,
+                value=1,
+                step=1,
+                key="max_depth_val",
+                help="Recommended 1 for Railway Free Tier limit.",
+            )
+
     show_pdf_upload = (
         selected_method == "pdf"
         or url_looks_like_pdf(input_url)
@@ -715,6 +771,9 @@ with col2:
                     payload = {
                         "url": input_url.strip(),
                         "method": request_method,
+                        "categories": categories_list,
+                        "max_pages": int(max_pages_val),
+                        "max_depth": int(max_depth_val),
                     }
                     with st.spinner("Crawling content and analyzing context..."):
                         response = requests.post(
@@ -722,6 +781,7 @@ with col2:
                             json=payload,
                             timeout=300,
                         )
+
 
                 if response.status_code != 200:
                     st.error(f"Backend API returned error code {response.status_code}")

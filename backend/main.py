@@ -210,11 +210,21 @@ def normalize_snapshot_result(result, request_url, public_base_url):
 @app.post("/crawl")
 async def crawl(request: CrawlRequest):
     try:
+        url_str = (request.url or "").strip()
+        if not (url_str.startswith("http://") or url_str.startswith("https://")):
+            raise HTTPException(
+                status_code=400,
+                detail="URL must begin with http:// or https://"
+            )
+
         method = request.method.lower()
-        if method == "single" and url_looks_like_pdf(request.url):
+        if method == "single" and url_looks_like_pdf(url_str):
             logger.info("Direct PDF URL detected; switching single extraction to pdf")
             method = "pdf"
-        logger.info(f"Incoming Request | Method={method} | URL={request.url}")
+        logger.info(
+            f"Incoming Request | Method={method} | URL={url_str} | "
+            f"Categories={request.categories} | Depth={request.max_depth} | Pages={request.max_pages}"
+        )
         handler = CRAWL_HANDLERS.get(method)
         if handler is None:
             raise HTTPException(
@@ -222,7 +232,22 @@ async def crawl(request: CrawlRequest):
                 detail="Invalid method. Choose one of: single, deep, dynamic, snapshot, css, xpath, regex, pdf",
             )
         async with crawl_semaphore:
-            result = await handler(request.url)
+            if method in ("deep", "dynamic"):
+                result = await handler(
+                    url=url_str,
+                    categories=request.categories,
+                    max_depth=request.max_depth or 1,
+                    max_pages=request.max_pages or 5,
+                )
+            elif method == "css":
+                result = await handler(url=url_str, css_schema=request.css_schema)
+            elif method == "xpath":
+                result = await handler(url=url_str, xpath_schema=request.xpath_schema)
+            elif method == "regex":
+                result = await handler(url=url_str, regex_patterns=request.regex_patterns)
+            else:
+                result = await handler(url_str)
+
         if method == "snapshot":
             result = normalize_snapshot_result(result, request.url, PUBLIC_BASE_URL)
         extracted_text = extract_text_for_llm(result)

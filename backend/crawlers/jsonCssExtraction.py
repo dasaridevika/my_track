@@ -2,30 +2,19 @@ import asyncio
 import json
 from crawl4ai import AsyncWebCrawler
 from crawl4ai.extraction_strategy import JsonCssExtractionStrategy
-schema = {
-    "name": "Example Page",
+DEFAULT_SCHEMA = {
+    "name": "Generic CSS Extraction",
     "baseSelector": "body",
     "fields": [
-        {
-            "name": "title",
-            "selector": "h1",
-            "type": "text"
-        },
-        {
-            "name": "paragraph",
-            "selector": "p",
-            "type": "text"
-        },
-        {
-            "name": "link",
-            "selector": "a",
-            "type": "attribute",
-            "attribute": "href"
-        }
+        {"name": "title", "selector": "h1, h2", "type": "text"},
+        {"name": "paragraphs", "selector": "p", "type": "text"},
+        {"name": "links", "selector": "a", "type": "attribute", "attribute": "href"}
     ]
 }
-async def css_extract(url: str):
-    strategy = JsonCssExtractionStrategy(schema)
+
+async def css_extract(url: str, css_schema: dict | None = None, **kwargs):
+    active_schema = css_schema if (isinstance(css_schema, dict) and css_schema) else DEFAULT_SCHEMA
+    strategy = JsonCssExtractionStrategy(active_schema)
     try:
         async with AsyncWebCrawler() as crawler:
             async with asyncio.timeout(80):
@@ -36,16 +25,22 @@ async def css_extract(url: str):
         return {
             "success": result.success,
             "url": result.url,
-            "markdown": result.markdown,
-            "html": result.html,
-            "extracted_content": result.extracted_content,
-            "metadata": result.metadata,
+            "markdown": getattr(result, "markdown", ""),
+            "html": getattr(result, "html", ""),
+            "extracted_content": getattr(result, "extracted_content", None),
+            "metadata": getattr(result, "metadata", {}),
         }
     except asyncio.TimeoutError:
         return {
             "success": False,
             "error": "Crawler request timed out after 80 seconds."
         }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
 # Optional: Run this file directly for testing
 if __name__ == "__main__":
     async def main():
