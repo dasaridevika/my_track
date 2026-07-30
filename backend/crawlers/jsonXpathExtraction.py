@@ -1,6 +1,6 @@
 import asyncio
 import json
-from crawl4ai import AsyncWebCrawler
+from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
 from crawl4ai.extraction_strategy import JsonXPathExtractionStrategy
 DEFAULT_XPATH_SCHEMA = {
     "name": "Generic XPath Extraction",
@@ -15,13 +15,15 @@ DEFAULT_XPATH_SCHEMA = {
 async def xpath_extract(url: str, xpath_schema: dict | None = None, **kwargs):
     active_schema = xpath_schema if (isinstance(xpath_schema, dict) and xpath_schema) else DEFAULT_XPATH_SCHEMA
     strategy = JsonXPathExtractionStrategy(active_schema)
+    config = CrawlerRunConfig(extraction_strategy=strategy)
     try:
         async with AsyncWebCrawler() as crawler:
             async with asyncio.timeout(80):
                 result = await crawler.arun(
                     url=url,
-                    extraction_strategy=strategy
+                    config=config
                 )
+
         return {
             "success": result.success,
             "url": result.url,

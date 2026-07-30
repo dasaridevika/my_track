@@ -1,6 +1,6 @@
 import asyncio
 import json
-from crawl4ai import AsyncWebCrawler
+from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
 from crawl4ai.extraction_strategy import JsonCssExtractionStrategy
 DEFAULT_SCHEMA = {
     "name": "Generic CSS Extraction",
@@ -15,13 +15,15 @@ DEFAULT_SCHEMA = {
 async def css_extract(url: str, css_schema: dict | None = None, **kwargs):
     active_schema = css_schema if (isinstance(css_schema, dict) and css_schema) else DEFAULT_SCHEMA
     strategy = JsonCssExtractionStrategy(active_schema)
+    config = CrawlerRunConfig(extraction_strategy=strategy)
     try:
         async with AsyncWebCrawler() as crawler:
             async with asyncio.timeout(80):
                 result = await crawler.arun(
                     url=url,
-                    extraction_strategy=strategy
+                    config=config
                 )
+
         return {
             "success": result.success,
             "url": result.url,
