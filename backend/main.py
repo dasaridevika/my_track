@@ -256,7 +256,8 @@ async def crawl(request: CrawlRequest):
         analysis_status = "skipped"
         llm_analysis = None
         
-        if method not in ("snapshot", "deep", "dynamic") and extracted_text and extracted_text.strip():
+        if method != "snapshot" and extracted_text and extracted_text.strip():
+
 
             analysis_job_id = str(uuid.uuid4())
             logger.info(f"Performing synchronous LLM analysis | method={method} | job_id={analysis_job_id}")
