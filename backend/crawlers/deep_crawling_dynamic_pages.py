@@ -51,9 +51,11 @@ async def deep_crawl_bfs(
             "--no-sandbox",
             "--disable-setuid-sandbox",
             "--disable-gpu",
-            "--disable-dev-shm-usage"
+            "--disable-dev-shm-usage",
+            "--js-flags=--max-old-space-size=128"
         ]
     )
+
 
     js_code = [
         """

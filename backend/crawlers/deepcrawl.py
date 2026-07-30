@@ -351,8 +351,15 @@ async def extract_webpage(
         verbose=False,
         enable_stealth=True,
         ignore_https_errors=True,
-        extra_args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu", "--disable-dev-shm-usage"]
+        extra_args=[
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-gpu",
+            "--disable-dev-shm-usage",
+            "--js-flags=--max-old-space-size=128"
+        ]
     )
+
 
     domain = urlparse(url).netloc
     url_filter = FilterChain([DomainFilter(allowed_domains=[domain])])

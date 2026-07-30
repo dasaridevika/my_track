@@ -880,11 +880,16 @@ with col2:
 
                 if response.status_code != 200:
                     st.error(f"Backend API returned error code {response.status_code}")
+                    if response.status_code == 502:
+                        st.warning("HTTP 502 Bad Gateway: The Railway backend service restarted or ran out of RAM (512MB limit) during this heavy crawl. Retrying with 'single' method or lower max pages will resolve this.")
+                    elif response.status_code == 504:
+                        st.warning("HTTP 504 Gateway Timeout: The request took longer than Railway's proxy limit. Try reducing Max Pages.")
                     try:
                         st.json(response.json())
                     except Exception:
                         st.text(response.text)
                     st.stop()
+
 
                 res_data = response.json()
                 data = res_data.get("data", res_data)
